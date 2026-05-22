@@ -544,11 +544,6 @@ def generate_output(requests, pokedex, evo_map, name_to_cache):
             leftover_dex.update(detail_units[idx]["dex_list"])
         dex_expr_all = ",".join(str(d) for d in sorted(leftover_dex))
 
-        lines.append(f"# 個別枠-GBL用(位置:{slot_index}/{total_slots} ユニット数:{uc})：グループに属さない図鑑番号について、SCP重視＋攻撃バランスを考慮した個体を個別に確認・保護するための検索")
-        for idx in ungrouped_indices:
-            lines.append(detail_units[idx]["line"])
-        lines.append("")
-
         lines.append(f"# 個別枠-GBL用(まとめて検索)(位置:{slot_index}/{total_slots} ユニット数:{uc})：グループに属さない図鑑番号をまとめて検索し、SCP重視＋攻撃バランスを考慮した個体を一括で確認するための検索")
         lines.append(f"{dex_expr_all}{EXCLUDE_FILTER_GBL_RAID}")
         lines.append("")
