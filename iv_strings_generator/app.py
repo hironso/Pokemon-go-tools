@@ -435,7 +435,7 @@ def generate_output(requests, pokedex, evo_map, name_to_cache):
 
     for pid, patt_atk, patt_def, patt_hp in GROUP_PATTERNS:
         candidate_indices = [i for i in pattern_to_unit_indices[pid] if i not in assigned]
-        min_required = 5 if pid >= 22 else 15
+        min_required = 5 if pid >= 22 else 25
         if len(candidate_indices) < min_required:
             continue
         candidate_indices.sort(key=lambda i: min(detail_units[i]["dex_list"]))
