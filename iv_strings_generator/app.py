@@ -601,6 +601,18 @@ except Exception as e:
     st.error(f"データ読み込みエラー: {e}")
     st.stop()
 
+# テンプレートダウンロード
+TEMPLATE_FILE = os.path.join(SHARED_DIR, "iv_list_input_templete.txt")
+if os.path.exists(TEMPLATE_FILE):
+    with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
+        template_text = f.read()
+    st.download_button(
+        label="📥 テンプレートをダウンロード（iv_list_input_templete.txt）",
+        data=template_text.encode("utf-8"),
+        file_name="iv_list_input_templete.txt",
+        mime="text/plain",
+    )
+
 # ファイルアップロード
 uploaded = st.file_uploader("iv_list_input.txt をアップロード", type=["txt"])
 
