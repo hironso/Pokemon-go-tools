@@ -219,7 +219,7 @@ def judge_tags(group):
 # ============================================================
 st.set_page_config(page_title="SCPランクチェッカー", page_icon="🎮", layout="wide")
 st.title("🎮 SCPランクチェッカー")
-st.caption("input.txt をアップロードして、SCPランクとおすすめタグを確認できます。")
+st.caption("rank_cheker_input.txt をアップロードして、SCPランクとおすすめタグを確認できます。")
 
 # pokedex読み込み
 pokedex, pokedex_error = load_pokedex()
@@ -229,16 +229,30 @@ if pokedex_error:
 
 st.success(f"図鑑データ読み込み済み（{len(pokedex)}種）")
 
+# テンプレートダウンロード
+TEMPLATE_FILE = os.path.join(BASE_DIR, "..", "shared", "rank_cheker_input_templete.txt")
+if os.path.exists(TEMPLATE_FILE):
+    with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
+        template_text = f.read()
+    st.download_button(
+        label="📥 テンプレートをダウンロード（rank_cheker_input_templete.txt）",
+        data=template_text.encode("utf-8"),
+        file_name="rank_cheker_input_templete.txt",
+        mime="text/plain",
+    )
+
 # ファイルアップロード
-uploaded = st.file_uploader("input.txt をアップロード", type=["txt"])
+uploaded = st.file_uploader("rank_cheker_input.txt をアップロード", type=["txt"])
 
 # サンプルフォーマット表示
-with st.expander("input.txt のフォーマット"):
+with st.expander("rank_cheker_input.txt のフォーマット"):
     st.code(
-        "# ポケモン名/リーグ(S/H/M)/攻撃IV/防御IV/HP IV\n"
+        "# ポケモン名/リーグ(S/H/M)/攻撃IV/防御IV/HPIV\n"
+        "# リーグ: S=スーパー(1500) H=ハイパー(2500) M=マスター\n"
+        "# IV範囲: 0〜15\n"
         "プクリン/S/1/12/6\n"
         "プクリン/S/2/14/6\n"
-        "ピカチュウ/H/15/15/15",
+        "ラッキー/H/15/15/15",
         language="text"
     )
 
