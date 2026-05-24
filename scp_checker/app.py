@@ -322,7 +322,14 @@ if uploaded is not None:
     )
     lines.append(header)
 
+    prev_name = None
+    prev_league = None
     for r in rows:
+        if prev_name is not None and (r["name"] != prev_name or r["league"] != prev_league):
+            lines.append("")
+        prev_name = r["name"]
+        prev_league = r["league"]
+
         line = (
             f"{r['input']:<{input_width}}"
             f"{r['rank']:04d}     {r['scp']:<4} "
