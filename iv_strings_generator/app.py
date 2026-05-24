@@ -31,10 +31,10 @@ SLIM_CACHE_FILE = os.path.join(SHARED_DIR, "slim_cache.json")
 # ============================================================
 LEAGUE_CAPS = {"S": 1500, "H": 2500, "M": None}
 
-EXCLUDE_FILTER_GBL_RAID = "&!お気に入り&!#&!しゃどう&!だいまっくす"
-EXCLUDE_FILTER_SEND     = "&!お気に入り&!#&!しゃどう&!色違い&!だいまっくす"
-CONFIRM_FILTER          = "&お気に入り,#&!しゃどう&!だいまっくす"
-EXCLUDE_TRADE_TAGS      = "&!#交換&!#レア交換&!#100km&!#300km"
+EXCLUDE_FILTER_GBL_RAID = "&!お気に入り&!#&!しゃどう&!だいまっくす&!きょだいまっくす"
+EXCLUDE_FILTER_SEND     = "&!お気に入り&!#&!しゃどう&!色違い&!だいまっくす&!きょだいまっくす"
+CONFIRM_FILTER          = "&お気に入り,#&!しゃどう&!だいまっくす&!きょだいまっくす"
+EXCLUDE_TRADE_TAGS      = "&!#交換&!#内交換&!#100km&!#300km"
 
 GROUP_PATTERNS = [
     (1,  {0,1},          {3,4},        {3,4}),
