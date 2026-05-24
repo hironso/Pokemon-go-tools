@@ -316,6 +316,14 @@ if uploaded is not None:
     header_left = input_width + HEADER_OFFSET
 
     lines = []
+    lines.append("# おすすめタグの選定条件")
+    lines.append("# ★SCP最大  : 入力個体の中でSCPが最も高い個体")
+    lines.append("# ★SCP重視  : SCP1位の99%以上の中で攻撃実数値が最も高い個体")
+    lines.append("# ★バランス : SCP1位の98.8%以上の中で攻撃実数値最大の個体を基準に")
+    lines.append("#              そのSCPの99.75%以上の中で攻撃実数値が最も高い個体")
+    lines.append("# ★攻撃重視 : SCP1位の98.5%以上の中で攻撃実数値最大の個体を基準に")
+    lines.append("#              そのSCPの99.6%以上の中で攻撃実数値が最も高い個体")
+    lines.append("")
     header = (
         f"{'':<{header_left}}"
         f"{'SCPRANK':<8} {'SCP':<4} {'ATK':<6} {'DEF':<6} {'HP':<3} {'CP':<4} {'Level':<5}"
