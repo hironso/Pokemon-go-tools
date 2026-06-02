@@ -338,6 +338,35 @@ if input_mode == "フォームで入力":
                     st.session_state.form_requests.pop(i)
                     st.rerun()
 
+        # ポケモン名一括置換
+        with st.expander("ポケモン名を一括置換"):
+            col1, col2, col3 = st.columns([3, 3, 2])
+            with col1:
+                replace_from = st.text_input("置換前のポケモン名", placeholder="例：フシギダネ", key="replace_from")
+            with col2:
+                replace_to = st.text_input("置換後のポケモン名", placeholder="例：フシギバナ", key="replace_to")
+            with col3:
+                st.write("")
+                st.write("")
+                if st.button("置換実行"):
+                    if not replace_from:
+                        st.error("置換前のポケモン名を入力してください。")
+                    elif not replace_to:
+                        st.error("置換後のポケモン名を入力してください。")
+                    elif replace_to not in pokedex:
+                        st.error(f"「{replace_to}」はpokedex_numbers.txtに存在しません。")
+                    else:
+                        count = sum(1 for n, _, _, _, _ in st.session_state.form_requests if n == replace_from)
+                        if count == 0:
+                            st.warning(f"「{replace_from}」はリストに存在しません。")
+                        else:
+                            st.session_state.form_requests = [
+                                (replace_to, lg, a, d, h) if n == replace_from else (n, lg, a, d, h)
+                                for n, lg, a, d, h in st.session_state.form_requests
+                            ]
+                            st.success(f"「{replace_from}」→「{replace_to}」に{count}件置換しました。")
+                            st.rerun()
+
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("🗑️ リストをクリア"):
