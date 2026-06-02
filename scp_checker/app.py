@@ -285,11 +285,11 @@ if input_mode == "フォームで入力":
     with st.form("iv_form", clear_on_submit=True):
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
-            iv_a = st.number_input("攻撃IV", min_value=0, max_value=15, value=0, step=1)
+            iv_a = st.number_input("攻撃IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15")
         with col2:
-            iv_d = st.number_input("防御IV", min_value=0, max_value=15, value=0, step=1)
+            iv_d = st.number_input("防御IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15")
         with col3:
-            iv_h = st.number_input("HP IV", min_value=0, max_value=15, value=0, step=1)
+            iv_h = st.number_input("HP IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15")
         with col4:
             st.write("")
             st.write("")
@@ -298,12 +298,15 @@ if input_mode == "フォームで入力":
         if submitted:
             name = st.session_state.form_name.strip()
             league = st.session_state.form_league
+            iv_a_val = int(iv_a) if iv_a is not None else 0
+            iv_d_val = int(iv_d) if iv_d is not None else 0
+            iv_h_val = int(iv_h) if iv_h is not None else 0
             if not name:
                 st.error("ポケモン名を入力してください。")
             elif name not in pokedex:
                 st.error(f"「{name}」はpokedex_numbers.txtに存在しません。")
             else:
-                st.session_state.form_requests.append((name, league, iv_a, iv_d, iv_h))
+                st.session_state.form_requests.append((name, league, iv_a_val, iv_d_val, iv_h_val))
 
     # 追加済みリスト
     if st.session_state.form_requests:
