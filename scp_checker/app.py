@@ -285,11 +285,11 @@ if input_mode == "フォームで入力":
     with st.form("iv_form", clear_on_submit=True):
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
-            iv_a = st.number_input("攻撃IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15")
+            iv_a_str = st.text_input("攻撃IV", value="", placeholder="0〜15")
         with col2:
-            iv_d = st.number_input("防御IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15")
+            iv_d_str = st.text_input("防御IV", value="", placeholder="0〜15")
         with col3:
-            iv_h = st.number_input("HP IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15")
+            iv_h_str = st.text_input("HP IV", value="", placeholder="0〜15")
         with col4:
             st.write("")
             st.write("")
@@ -298,14 +298,32 @@ if input_mode == "フォームで入力":
         if submitted:
             name = st.session_state.form_name.strip()
             league = st.session_state.form_league
-            iv_a_val = int(iv_a) if iv_a is not None else 0
-            iv_d_val = int(iv_d) if iv_d is not None else 0
-            iv_h_val = int(iv_h) if iv_h is not None else 0
+            # IV値のバリデーション
+            iv_errors = []
+            iv_vals = []
+            for label, val_str in [("攻撃IV", iv_a_str), ("防御IV", iv_d_str), ("HP IV", iv_h_str)]:
+                val_str = val_str.strip()
+                if val_str == "":
+                    iv_vals.append(0)
+                else:
+                    try:
+                        v = int(val_str)
+                        if not (0 <= v <= 15):
+                            iv_errors.append(f"{label}は0〜15で入力してください（入力値：{v}）")
+                        else:
+                            iv_vals.append(v)
+                    except ValueError:
+                        iv_errors.append(f"{label}に数値以外が入力されています（入力値：{val_str}）")
+
             if not name:
                 st.error("ポケモン名を入力してください。")
             elif name not in pokedex:
                 st.error(f"「{name}」はpokedex_numbers.txtに存在しません。")
+            elif iv_errors:
+                for e in iv_errors:
+                    st.error(e)
             else:
+                iv_a_val, iv_d_val, iv_h_val = iv_vals
                 st.session_state.form_requests.append((name, league, iv_a_val, iv_d_val, iv_h_val))
 
     # 追加済みリスト
