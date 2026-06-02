@@ -457,11 +457,21 @@ if requests:
     lines = []
     lines.append("# おすすめタグの選定条件")
     lines.append("# ★SCP最大  : 入力個体の中でSCPが最も高い個体")
+    lines.append("#")
     lines.append("# ★SCP重視  : SCP1位の99%以上の中で攻撃実数値が最も高い個体")
+    lines.append("#              用途：あまり使われないポケモンで攻撃実数値も無視したくない場合")
+    lines.append("#")
     lines.append("# ★バランス : SCP1位の98.8%以上の中で攻撃実数値最大の個体を基準に")
     lines.append("#              そのSCPの99.75%以上の中で攻撃実数値が最も高い個体")
+    lines.append("#              ※2段階絞り込みの理由：SCPがほぼ同じ（99.75%以内）なら")
+    lines.append("#               攻撃実数値を優先するため。SCPを犠牲にしすぎない設計。")
+    lines.append("#              用途：多用されるポケモンでミラー対面の同発を意識する場合")
+    lines.append("#")
     lines.append("# ★攻撃重視 : SCP1位の98.5%以上の中で攻撃実数値最大の個体を基準に")
     lines.append("#              そのSCPの99.6%以上の中で攻撃実数値が最も高い個体")
+    lines.append("#              ※2段階絞り込みの理由：バランスより許容範囲を広げ（99.6%）")
+    lines.append("#               より積極的に攻撃実数値を優先する設計。")
+    lines.append("#              用途：攻撃実数値重視の相手にも同発で勝ちたい場合")
     lines.append("")
     header = (
         f"{'':<{header_left}}"
