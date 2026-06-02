@@ -219,7 +219,6 @@ def judge_tags(group):
 # ============================================================
 st.set_page_config(page_title="SCPランクチェッカー", page_icon="🎮", layout="wide")
 st.title("🎮 SCPランクチェッカー")
-st.caption("rank_cheker_input.txt をアップロードして、SCPランクとおすすめタグを確認できます。")
 
 # pokedex読み込み
 pokedex, pokedex_error = load_pokedex()
@@ -241,35 +240,125 @@ if os.path.exists(TEMPLATE_FILE):
         mime="text/plain",
     )
 
-# ファイルアップロード
-uploaded = st.file_uploader("rank_cheker_input.txt をアップロード", type=["txt"])
+# ============================================================
+# 入力モード選択
+# ============================================================
+input_mode = st.radio("入力方法を選択", ["フォームで入力", "ファイルをアップロード"], horizontal=True)
 
-# サンプルフォーマット表示
-with st.expander("rank_cheker_input.txt のフォーマット"):
-    st.code(
-        "# ポケモン名/リーグ(S/H/M)/攻撃IV/防御IV/HPIV\n"
-        "# リーグ: S=スーパー(1500) H=ハイパー(2500) M=マスター\n"
-        "# IV範囲: 0〜15\n"
-        "プクリン/S/1/12/6\n"
-        "プクリン/S/2/14/6\n"
-        "ラッキー/H/15/15/15",
-        language="text"
-    )
+# session_stateの初期化
+if "form_requests" not in st.session_state:
+    st.session_state.form_requests = []
+if "form_name" not in st.session_state:
+    st.session_state.form_name = ""
+if "form_league" not in st.session_state:
+    st.session_state.form_league = "S"
 
-if uploaded is not None:
-    text = uploaded.read().decode("utf-8")
-    requests, errors = parse_input(text)
+requests = []
 
-    if errors:
-        st.error("入力エラーがあります：")
-        for e in errors:
-            st.write(f"- {e}")
-        st.stop()
+# ============================================================
+# フォーム入力モード
+# ============================================================
+if input_mode == "フォームで入力":
 
-    if not requests:
-        st.warning("有効な行がありません。")
-        st.stop()
+    # ポケモン名・リーグ（フォーム外）
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        name_input = st.text_input(
+            "ポケモン名",
+            value=st.session_state.form_name,
+            placeholder="例：カメックス",
+            key="name_input_field"
+        )
+    with col2:
+        league_input = st.selectbox(
+            "リーグ",
+            ["S", "H", "M"],
+            index=["S", "H", "M"].index(st.session_state.form_league),
+            key="league_input_field"
+        )
 
+    # ポケモン名・リーグをsession_stateに保持
+    st.session_state.form_name = name_input
+    st.session_state.form_league = league_input
+
+    # IV入力フォーム
+    with st.form("iv_form", clear_on_submit=True):
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+        with col1:
+            iv_a = st.number_input("攻撃IV", min_value=0, max_value=15, value=0, step=1)
+        with col2:
+            iv_d = st.number_input("防御IV", min_value=0, max_value=15, value=0, step=1)
+        with col3:
+            iv_h = st.number_input("HP IV", min_value=0, max_value=15, value=0, step=1)
+        with col4:
+            st.write("")
+            st.write("")
+            submitted = st.form_submit_button("追加")
+
+        if submitted:
+            name = st.session_state.form_name.strip()
+            league = st.session_state.form_league
+            if not name:
+                st.error("ポケモン名を入力してください。")
+            elif name not in pokedex:
+                st.error(f"「{name}」はpokedex_numbers.txtに存在しません。")
+            else:
+                st.session_state.form_requests.append((name, league, iv_a, iv_d, iv_h))
+
+    # 追加済みリスト
+    if st.session_state.form_requests:
+        st.subheader(f"追加済みリスト（{len(st.session_state.form_requests)}件）")
+        for i, (n, lg, a, d, h) in enumerate(st.session_state.form_requests):
+            col1, col2 = st.columns([6, 1])
+            with col1:
+                st.text(f"{n}/{lg}/{a}/{d}/{h}")
+            with col2:
+                if st.button("✕", key=f"del_{i}"):
+                    st.session_state.form_requests.pop(i)
+                    st.rerun()
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("🗑️ リストをクリア"):
+                st.session_state.form_requests = []
+                st.rerun()
+        with col2:
+            if st.button("✅ 計算実行", type="primary"):
+                requests = list(st.session_state.form_requests)
+
+# ============================================================
+# ファイルアップロードモード
+# ============================================================
+else:
+    uploaded = st.file_uploader("rank_cheker_input.txt をアップロード", type=["txt"])
+    with st.expander("rank_cheker_input.txt のフォーマット"):
+        st.code(
+            "# ポケモン名/リーグ(S/H/M)/攻撃IV/防御IV/HPIV\n"
+            "# リーグ: S=スーパー(1500) H=ハイパー(2500) M=マスター\n"
+            "# IV範囲: 0〜15\n"
+            "プクリン/S/1/12/6\n"
+            "プクリン/S/2/14/6\n"
+            "ラッキー/H/15/15/15",
+            language="text"
+        )
+
+    if uploaded is not None:
+        text = uploaded.read().decode("utf-8")
+        parsed, errors = parse_input(text)
+        if errors:
+            st.error("入力エラーがあります：")
+            for e in errors:
+                st.write(f"- {e}")
+            st.stop()
+        if not parsed:
+            st.warning("有効な行がありません。")
+            st.stop()
+        requests = parsed
+
+# ============================================================
+# 計算処理（共通）
+# ============================================================
+if requests:
     st.info(f"{len(requests)}件を計算します。しばらくお待ちください...")
     progress = st.progress(0)
 
@@ -362,3 +451,4 @@ if uploaded is not None:
         file_name="output.txt",
         mime="text/plain",
     )
+
