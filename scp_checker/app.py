@@ -182,8 +182,19 @@ def pick_best(candidates):
         key=lambda x: (-x["atk"], -x["scp"], -x["hp"], x["rank"], x["input_index"])
     )[0]
 
+def pick_top2(candidates):
+    """候補の中から上位2件を返す（1件しかない場合は1件のみ）"""
+    sorted_cands = sorted(
+        candidates,
+        key=lambda x: (-x["atk"], -x["scp"], -x["hp"], x["rank"], x["input_index"])
+    )
+    return sorted_cands[:2]
+
+
 def judge_tags(group):
     tags = defaultdict(set)
+
+    # ★SCP最大（1体のみ）
     max_scp = max(p["scp"] for p in group)
     scp_max_candidates = [p for p in group if p["scp"] == max_scp]
     best = pick_best(scp_max_candidates)
@@ -191,26 +202,39 @@ def judge_tags(group):
 
     ref_scp1 = min(group, key=lambda x: x["rank"])["scp"]
 
+    # ★SCP重視（1位・2位）
     t = ceil_percent(ref_scp1, 0.99)
     cands = [p for p in group if p["scp"] >= t]
-    best = pick_best(cands) if cands else min(group, key=lambda x: x["rank"])
-    tags[best["idx"]].add("★SCP重視")
+    if not cands:
+        cands = [min(group, key=lambda x: x["rank"])]
+    top2 = pick_top2(cands)
+    tags[top2[0]["idx"]].add("★SCP重視1位")
+    if len(top2) >= 2:
+        tags[top2[1]["idx"]].add("★SCP重視2位")
 
+    # ★バランス（1位・2位）
     t1 = ceil_percent(ref_scp1, 0.988)
     c1 = [p for p in group if p["scp"] >= t1]
-    tmp = pick_best(c1)
+    tmp = pick_best(c1) if c1 else min(group, key=lambda x: x["rank"])
     t2 = ceil_percent(tmp["scp"], 0.9975)
     c2 = [p for p in group if p["scp"] >= t2]
-    best = pick_best(c2) if c2 else tmp
-    tags[best["idx"]].add("★バランス")
+    cands = c2 if c2 else [tmp]
+    top2 = pick_top2(cands)
+    tags[top2[0]["idx"]].add("★バランス1位")
+    if len(top2) >= 2:
+        tags[top2[1]["idx"]].add("★バランス2位")
 
+    # ★攻撃重視（1位・2位）
     t1 = ceil_percent(ref_scp1, 0.985)
     c1 = [p for p in group if p["scp"] >= t1]
-    tmp = pick_best(c1)
+    tmp = pick_best(c1) if c1 else min(group, key=lambda x: x["rank"])
     t2 = ceil_percent(tmp["scp"], 0.996)
     c2 = [p for p in group if p["scp"] >= t2]
-    best = pick_best(c2) if c2 else tmp
-    tags[best["idx"]].add("★攻撃重視")
+    cands = c2 if c2 else [tmp]
+    top2 = pick_top2(cands)
+    tags[top2[0]["idx"]].add("★攻撃重視1位")
+    if len(top2) >= 2:
+        tags[top2[1]["idx"]].add("★攻撃重視2位")
 
     return tags
 
@@ -458,17 +482,17 @@ if requests:
     lines.append("# おすすめタグの選定条件")
     lines.append("# ★SCP最大  : 入力個体の中でSCPが最も高い個体")
     lines.append("#")
-    lines.append("# ★SCP重視  : SCP1位の99%以上の中で攻撃実数値が最も高い個体")
+    lines.append("# ★SCP重視1位・2位 : SCP1位の99%以上の中で攻撃実数値が高い順に2体")
     lines.append("#              用途：あまり使われないポケモンで攻撃実数値も無視したくない場合")
     lines.append("#")
-    lines.append("# ★バランス : SCP1位の98.8%以上の中で攻撃実数値最大の個体を基準に")
-    lines.append("#              そのSCPの99.75%以上の中で攻撃実数値が最も高い個体")
+    lines.append("# ★バランス1位・2位 : SCP1位の98.8%以上の中で攻撃実数値最大の個体を基準に")
+    lines.append("#              そのSCPの99.75%以上の中で攻撃実数値が高い順に2体")
     lines.append("#              ※2段階絞り込みの理由：SCPがほぼ同じ（99.75%以内）なら")
     lines.append("#               攻撃実数値を優先するため。SCPを犠牲にしすぎない設計。")
     lines.append("#              用途：多用されるポケモンでミラー対面の同発を意識する場合")
     lines.append("#")
-    lines.append("# ★攻撃重視 : SCP1位の98.5%以上の中で攻撃実数値最大の個体を基準に")
-    lines.append("#              そのSCPの99.6%以上の中で攻撃実数値が最も高い個体")
+    lines.append("# ★攻撃重視1位・2位 : SCP1位の98.5%以上の中で攻撃実数値最大の個体を基準に")
+    lines.append("#              そのSCPの99.6%以上の中で攻撃実数値が高い順に2体")
     lines.append("#              ※2段階絞り込みの理由：バランスより許容範囲を広げ（99.6%）")
     lines.append("#               より積極的に攻撃実数値を優先する設計。")
     lines.append("#              用途：攻撃実数値重視の相手にも同発で勝ちたい場合")
