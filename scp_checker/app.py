@@ -571,7 +571,7 @@ if requests:
     lines.append("")
     header = (
         f"{'':<{header_left}}"
-        f"{'SCPRANK':<8} {'SCP':<4} {'ATK':<6} {'DEF':<6} {'HP':<3} {'CP':<4} {'Level':<5}"
+        f"{'League':<7} {'SCPRANK':<8} {'SCP':<4} {'ATK':<6} {'DEF':<6} {'HP':<3} {'CP':<4} {'Level':<5}"
     )
     lines.append(header)
 
@@ -587,7 +587,7 @@ if requests:
 
         line = (
             f"{r['input']:<{input_width}}"
-            f"{r['rank']:04d}     {r['scp']:<4} "
+            f"{r['league']:<7} {r['rank']:04d}     {r['scp']:<4} "
             f"{r['atk']:<6.2f} {r['def']:<6.2f} "
             f"{r['hp']:<3} {r['cp']:<4} {r['level']:<5.1f}"
         )
