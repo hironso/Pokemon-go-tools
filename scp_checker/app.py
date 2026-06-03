@@ -182,7 +182,12 @@ def parse_input(text, pokedex):
             errors.append(f"{i}行目: 不正なリーグ → {league}")
             continue
         try:
-            iv_a, iv_d, iv_h = map(int, parts[2:])
+            def parse_iv(v):
+                try:
+                    return int(v, 10)
+                except ValueError:
+                    return int(v, 16)
+            iv_a, iv_d, iv_h = (parse_iv(v) for v in parts[2:])
         except ValueError:
             errors.append(f"{i}行目: IVが数値ではありません → {raw}")
             continue
@@ -374,7 +379,10 @@ if input_mode == "フォームで入力":
                     iv_vals.append(0)
                 else:
                     try:
-                        v = int(val_str)
+                        try:
+                            v = int(val_str, 10)
+                        except ValueError:
+                            v = int(val_str, 16)
                         if not (0 <= v <= 15):
                             iv_errors.append(f"{label}は0〜15で入力してください（入力値：{v}）")
                         else:
