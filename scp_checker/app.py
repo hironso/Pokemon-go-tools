@@ -213,7 +213,18 @@ def pick_top2(candidates):
     return sorted_cands[:2]
 
 
-def judge_tags(group):
+def get_top1_scp(base_atk, base_def, base_sta, cap_cp):
+    """全4096IV中のSCP最大値を返す"""
+    top1_scp = 0
+    for a in range(16):
+        for d in range(16):
+            for h in range(16):
+                result = best_within_cap(base_atk, base_def, base_sta, a, d, h, cap_cp)
+                if result and result["scp"] > top1_scp:
+                    top1_scp = result["scp"]
+    return top1_scp
+
+def judge_tags(group, top1_scp):
     tags = defaultdict(set)
 
     # ★SCP最大（1体のみ）
@@ -222,7 +233,7 @@ def judge_tags(group):
     best = pick_best(scp_max_candidates)
     tags[best["idx"]].add("★SCP最大")
 
-    ref_scp1 = min(group, key=lambda x: x["rank"])["scp"]
+    ref_scp1 = top1_scp
 
     # ★SCP重視（1位・2位）
     t = ceil_percent(ref_scp1, 0.99)
@@ -522,8 +533,12 @@ if requests:
         groups[(r["name"], r["league"], r["shadow"])].append(r)
 
     tag_map = defaultdict(set)
-    for g in groups.values():
-        t = judge_tags(g)
+    for (name, league, shadow), g in groups.items():
+        lookup = base_name(name, pokedex)
+        entry = pokedex[lookup]
+        cap_cp = LEAGUE_CAPS[league]
+        top1_scp = get_top1_scp(entry["atk_base"], entry["def_base"], entry["hp_base"], cap_cp)
+        t = judge_tags(g, top1_scp)
         for k, v in t.items():
             tag_map[k].update(v)
 
