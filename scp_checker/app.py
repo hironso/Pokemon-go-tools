@@ -6,6 +6,7 @@ Streamlit版 SCPランクチェッカー
 - input.txt をアップロードして SCPランク・おすすめタグを計算・表示する
 - scp_cache.json は使わず、リアルタイム計算に変更
 - pokedex_numbers.txt は shared/ フォルダから参照
+- シャドウポケモン対応：ポケモン名先頭Sでシャドウ判定、通常・シャドウを別グループで計算
 """
 
 import math
@@ -142,9 +143,28 @@ def load_pokedex():
     return pokedex, None
 
 # ============================================================
+# シャドウ判定ユーティリティ
+# ============================================================
+def is_shadow_name(name, pokedex):
+    """ポケモン名の先頭がSかつS除き名がpokedexに存在すればシャドウと判定"""
+    return name.startswith("S") and name[1:] in pokedex
+
+def to_shadow_name(name, pokedex):
+    """通常名をシャドウ名に変換（既にS付きなら変換しない）"""
+    if is_shadow_name(name, pokedex):
+        return name
+    return "S" + name
+
+def base_name(name, pokedex):
+    """シャドウ名から通常名を取得（通常名はそのまま返す）"""
+    if is_shadow_name(name, pokedex):
+        return name[1:]
+    return name
+
+# ============================================================
 # input.txt パース
 # ============================================================
-def parse_input(text):
+def parse_input(text, pokedex):
     requests = []
     errors = []
     for i, line in enumerate(text.splitlines(), 1):
@@ -156,6 +176,8 @@ def parse_input(text):
             errors.append(f"{i}行目: 形式不正 → {raw}")
             continue
         name, league = parts[0].strip(), parts[1].strip()
+        # シャドウ判定
+        shadow = is_shadow_name(name, pokedex)
         if league not in LEAGUE_CAPS:
             errors.append(f"{i}行目: 不正なリーグ → {league}")
             continue
@@ -167,7 +189,7 @@ def parse_input(text):
         if not all(0 <= v <= 15 for v in (iv_a, iv_d, iv_h)):
             errors.append(f"{i}行目: IV範囲不正(0-15) → {raw}")
             continue
-        requests.append((name, league, iv_a, iv_d, iv_h))
+        requests.append((name, league, iv_a, iv_d, iv_h, shadow))
     return requests, errors
 
 # ============================================================
@@ -276,6 +298,8 @@ if "form_name" not in st.session_state:
     st.session_state.form_name = ""
 if "form_league" not in st.session_state:
     st.session_state.form_league = "S"
+if "form_shadow" not in st.session_state:
+    st.session_state.form_shadow = False
 
 requests = []
 
@@ -284,8 +308,8 @@ requests = []
 # ============================================================
 if input_mode == "フォームで入力":
 
-    # ポケモン名・リーグ（フォーム外）
-    col1, col2 = st.columns([3, 1])
+    # ポケモン名・リーグ・シャドウ（フォーム外）
+    col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
         name_input = st.text_input(
             "ポケモン名",
@@ -300,10 +324,18 @@ if input_mode == "フォームで入力":
             index=["S", "H", "M"].index(st.session_state.form_league),
             key="league_input_field"
         )
+    with col3:
+        st.write("")
+        shadow_input = st.checkbox(
+            "シャドウ",
+            value=st.session_state.form_shadow,
+            key="shadow_input_field"
+        )
 
-    # ポケモン名・リーグをsession_stateに保持
+    # ポケモン名・リーグ・シャドウをsession_stateに保持
     st.session_state.form_name = name_input
     st.session_state.form_league = league_input
+    st.session_state.form_shadow = shadow_input
 
     # IV入力フォーム
     with st.form("iv_form", clear_on_submit=True):
@@ -341,19 +373,34 @@ if input_mode == "フォームで入力":
 
             if not name:
                 st.error("ポケモン名を入力してください。")
-            elif name not in pokedex:
-                st.error(f"「{name}」はpokedex_numbers.txtに存在しません。")
-            elif iv_errors:
-                for e in iv_errors:
-                    st.error(e)
             else:
-                iv_a_val, iv_d_val, iv_h_val = iv_vals
-                st.session_state.form_requests.append((name, league, iv_a_val, iv_d_val, iv_h_val))
+                # シャドウ判定：チェックボックスまたはポケモン名先頭S
+                cb_shadow = st.session_state.form_shadow
+                name_shadow = is_shadow_name(name, pokedex)
+
+                if cb_shadow or name_shadow:
+                    # シャドウ：先頭Sが既についていなければ付ける
+                    display_name = name if name_shadow else "S" + name
+                    is_shadow = True
+                else:
+                    display_name = name
+                    is_shadow = False
+
+                # pokedexバリデーション（S除き名で検索）
+                lookup_name = base_name(display_name, pokedex)
+                if lookup_name not in pokedex:
+                    st.error(f"「{name}」はpokedex_numbers.txtに存在しません。")
+                elif iv_errors:
+                    for e in iv_errors:
+                        st.error(e)
+                else:
+                    iv_a_val, iv_d_val, iv_h_val = iv_vals
+                    st.session_state.form_requests.append((display_name, league, iv_a_val, iv_d_val, iv_h_val, is_shadow))
 
     # 追加済みリスト
     if st.session_state.form_requests:
         st.subheader(f"追加済みリスト（{len(st.session_state.form_requests)}件）")
-        for i, (n, lg, a, d, h) in enumerate(st.session_state.form_requests):
+        for i, (n, lg, a, d, h, sw) in enumerate(st.session_state.form_requests):
             col1, col2 = st.columns([6, 1])
             with col1:
                 st.text(f"{n}/{lg}/{a}/{d}/{h}")
@@ -377,19 +424,24 @@ if input_mode == "フォームで入力":
                         st.error("置換前のポケモン名を入力してください。")
                     elif not replace_to:
                         st.error("置換後のポケモン名を入力してください。")
-                    elif replace_to not in pokedex:
-                        st.error(f"「{replace_to}」はpokedex_numbers.txtに存在しません。")
                     else:
-                        count = sum(1 for n, _, _, _, _ in st.session_state.form_requests if n == replace_from)
-                        if count == 0:
-                            st.warning(f"「{replace_from}」はリストに存在しません。")
+                        # 置換後のpokedexバリデーション（S除き名で検索）
+                        lookup_to = base_name(replace_to, pokedex)
+                        if lookup_to not in pokedex:
+                            st.error(f"「{replace_to}」はpokedex_numbers.txtに存在しません。")
                         else:
-                            st.session_state.form_requests = [
-                                (replace_to, lg, a, d, h) if n == replace_from else (n, lg, a, d, h)
-                                for n, lg, a, d, h in st.session_state.form_requests
-                            ]
-                            st.success(f"「{replace_from}」→「{replace_to}」に{count}件置換しました。")
-                            st.rerun()
+                            count = sum(1 for n, _, _, _, _, _ in st.session_state.form_requests if n == replace_from)
+                            if count == 0:
+                                st.warning(f"「{replace_from}」はリストに存在しません。")
+                            else:
+                                # 置換後のシャドウフラグを再判定
+                                new_shadow = is_shadow_name(replace_to, pokedex)
+                                st.session_state.form_requests = [
+                                    (replace_to, lg, a, d, h, new_shadow) if n == replace_from else (n, lg, a, d, h, sw)
+                                    for n, lg, a, d, h, sw in st.session_state.form_requests
+                                ]
+                                st.success(f"「{replace_from}」→「{replace_to}」に{count}件置換しました。")
+                                st.rerun()
 
         col1, col2 = st.columns([1, 1])
         with col1:
@@ -410,15 +462,17 @@ else:
             "# ポケモン名/リーグ(S/H/M)/攻撃IV/防御IV/HPIV\n"
             "# リーグ: S=スーパー(1500) H=ハイパー(2500) M=マスター\n"
             "# IV範囲: 0〜15\n"
+            "# シャドウはポケモン名の先頭にSをつける\n"
             "プクリン/S/1/12/6\n"
             "プクリン/S/2/14/6\n"
+            "Sプクリン/S/1/13/6\n"
             "ラッキー/H/15/15/15",
             language="text"
         )
 
     if uploaded is not None:
         text = uploaded.read().decode("utf-8")
-        parsed, errors = parse_input(text)
+        parsed, errors = parse_input(text, pokedex)
         if errors:
             st.error("入力エラーがあります：")
             for e in errors:
@@ -437,8 +491,10 @@ if requests:
     progress = st.progress(0)
 
     rows = []
-    for idx, (name, league, iv_a, iv_d, iv_h) in enumerate(requests):
-        entry = pokedex.get(name)
+    for idx, (name, league, iv_a, iv_d, iv_h, shadow) in enumerate(requests):
+        # pokedexはS除き名で検索
+        lookup = base_name(name, pokedex)
+        entry = pokedex.get(lookup)
         if not entry:
             st.error(f"ポケモンが見つかりません: {name}")
             st.stop()
@@ -451,18 +507,19 @@ if requests:
 
         rows.append({
             "idx": idx,
-            "input": f"{name}/{league}/{iv_a}/{iv_d}/{iv_h}",
+            "input": f"{name}/{iv_a}/{iv_d}/{iv_h}",
             "input_index": idx,
             "league": league,
             "name": name,
+            "shadow": shadow,
             **result,
         })
         progress.progress((idx + 1) / len(requests))
 
-    # おすすめタグ判定
+    # おすすめタグ判定（通常・シャドウを別グループ）
     groups = defaultdict(list)
     for r in rows:
-        groups[(r["name"], r["league"])].append(r)
+        groups[(r["name"], r["league"], r["shadow"])].append(r)
 
     tag_map = defaultdict(set)
     for g in groups.values():
@@ -505,11 +562,13 @@ if requests:
 
     prev_name = None
     prev_league = None
+    prev_shadow = None
     for r in rows:
-        if prev_name is not None and (r["name"] != prev_name or r["league"] != prev_league):
+        if prev_name is not None and (r["name"] != prev_name or r["league"] != prev_league or r["shadow"] != prev_shadow):
             lines.append("")
         prev_name = r["name"]
         prev_league = r["league"]
+        prev_shadow = r["shadow"]
 
         line = (
             f"{r['input']:<{input_width}}"
@@ -535,4 +594,3 @@ if requests:
         file_name="output.txt",
         mime="text/plain",
     )
-
