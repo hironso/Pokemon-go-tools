@@ -428,39 +428,69 @@ if input_mode == "フォームで入力":
                     st.session_state.form_requests.pop(i)
                     st.rerun()
 
-        # ポケモン名一括置換
-        with st.expander("ポケモン名を一括置換"):
-            col1, col2, col3 = st.columns([3, 3, 2])
+        # ポケモン名・リーグ一括置換
+        with st.expander("ポケモン名・リーグを一括置換"):
+            LEAGUE_OPTIONS = ["変更なし", "S", "H", "M"]
+            col1, col2 = st.columns(2)
             with col1:
-                replace_from = st.text_input("置換前のポケモン名", placeholder="例：フシギダネ", key="replace_from")
+                st.caption("置換前")
+                replace_name_from = st.text_input("ポケモン名（空欄=全対象）", placeholder="例：リザードン", key="replace_name_from")
+                replace_league_from = st.selectbox("リーグ", LEAGUE_OPTIONS, key="replace_league_from")
             with col2:
-                replace_to = st.text_input("置換後のポケモン名", placeholder="例：フシギバナ", key="replace_to")
-            with col3:
-                st.write("")
-                st.write("")
-                if st.button("置換実行"):
-                    if not replace_from:
-                        st.error("置換前のポケモン名を入力してください。")
-                    elif not replace_to:
-                        st.error("置換後のポケモン名を入力してください。")
-                    else:
-                        # 置換後のpokedexバリデーション（S除き名で検索）
-                        lookup_to = base_name(replace_to, pokedex)
+                st.caption("置換後")
+                replace_name_to = st.text_input("ポケモン名（空欄=変更なし）", placeholder="例：リザードン", key="replace_name_to")
+                replace_league_to = st.selectbox("リーグ", LEAGUE_OPTIONS, key="replace_league_to")
+
+            if st.button("置換実行"):
+                # 置換前・置換後ともに何も指定されていない場合
+                name_from = replace_name_from.strip()
+                name_to = replace_name_to.strip()
+                league_from = replace_league_from
+                league_to = replace_league_to
+
+                if not name_from and league_from == "変更なし":
+                    st.error("置換前のポケモン名またはリーグを指定してください。")
+                elif not name_to and league_to == "変更なし":
+                    st.error("置換後のポケモン名またはリーグを指定してください。")
+                else:
+                    # 置換後ポケモン名のpokedexバリデーション
+                    valid = True
+                    if name_to:
+                        lookup_to = base_name(name_to, pokedex)
                         if lookup_to not in pokedex:
-                            st.error(f"「{replace_to}」はpokedex_numbers.txtに存在しません。")
+                            st.error(f"「{name_to}」はpokedex_numbers.txtに存在しません。")
+                            valid = False
+
+                    if valid:
+                        # 対象行の特定
+                        def is_target(n, lg):
+                            name_match = (not name_from) or (n == name_from)
+                            league_match = (league_from == "変更なし") or (lg == league_from)
+                            return name_match and league_match
+
+                        count = sum(1 for n, lg, _, _, _, _ in st.session_state.form_requests if is_target(n, lg))
+                        if count == 0:
+                            st.warning("条件に一致する行がリストに存在しません。")
                         else:
-                            count = sum(1 for n, _, _, _, _, _ in st.session_state.form_requests if n == replace_from)
-                            if count == 0:
-                                st.warning(f"「{replace_from}」はリストに存在しません。")
-                            else:
-                                # 置換後のシャドウフラグを再判定
-                                new_shadow = is_shadow_name(replace_to, pokedex)
-                                st.session_state.form_requests = [
-                                    (replace_to, lg, a, d, h, new_shadow) if n == replace_from else (n, lg, a, d, h, sw)
-                                    for n, lg, a, d, h, sw in st.session_state.form_requests
-                                ]
-                                st.success(f"「{replace_from}」→「{replace_to}」に{count}件置換しました。")
-                                st.rerun()
+                            def apply_replace(n, lg, a, d, h, sw):
+                                if not is_target(n, lg):
+                                    return (n, lg, a, d, h, sw)
+                                new_name = name_to if name_to else n
+                                new_league = league_to if league_to != "変更なし" else lg
+                                new_shadow = is_shadow_name(new_name, pokedex)
+                                return (new_name, new_league, a, d, h, new_shadow)
+
+                            st.session_state.form_requests = [
+                                apply_replace(n, lg, a, d, h, sw)
+                                for n, lg, a, d, h, sw in st.session_state.form_requests
+                            ]
+                            msg_parts = []
+                            if name_from:
+                                msg_parts.append(f"名前「{name_from}」→「{name_to if name_to else '変更なし'}」")
+                            if league_from != "変更なし":
+                                msg_parts.append(f"リーグ「{league_from}」→「{league_to if league_to != '変更なし' else '変更なし'}」")
+                            st.success(f"{' / '.join(msg_parts)} を{count}件置換しました。")
+                            st.rerun()
 
         col1, col2 = st.columns([1, 1])
         with col1:
@@ -600,8 +630,9 @@ if requests:
             f"{r['hp']:<3} {r['cp']:<4} {r['level']:<5.1f}"
         )
         tags = " ".join(sorted(tag_map[r["idx"]]))
-        if tags:
-            line += "  " + tags
+        rb = "[RB] " if r["level"] > 50.0 else ""
+        if rb or tags:
+            line += "  " + rb + tags
         lines.append(line)
 
     output_text = "\n".join(lines)
