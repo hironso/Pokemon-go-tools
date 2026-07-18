@@ -1,0 +1,24 @@
+# --- Python 仮想環境 ---
+.venv/
+
+# --- Python キャッシュ・バイトコード ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# --- テスト・型チェック・カバレッジのキャッシュ ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- OS・エディタが作る雑多なファイル ---
+.DS_Store
+Thumbs.db
+
+# --- 人間用メモ（GitHub に上げない） ---
+ClaudeCode対象外/
+
+# --- ツールの実行結果（出力ファイル） ---
+tools/data_checker_result.txt

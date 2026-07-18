@@ -1,0 +1,9 @@
+# --- 実行時依存（Streamlit アプリ本体） ---
+streamlit==1.59.2
+
+# --- 開発ツール（Claude Code のフックが使用） ---
+black==26.5.1
+ruff==0.15.22
+mypy==2.3.0
+pytest==9.1.1
+pytest-cov==7.1.0

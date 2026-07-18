@@ -1,0 +1,31 @@
+# ======================================================================
+# プロジェクト共通のツール設定（black / ruff / mypy / pytest）
+# Python 3.12 を対象とする
+# ======================================================================
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E,F: 基本エラー / I: import 整列 / UP: 新しい構文への更新提案
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+# 型チェックの対象は src/ のみ（薄いエントリポイント app.py は対象外）
+files = ["src"]
+strict = true
+# サードパーティに型情報が無くてもエラーにしない
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# テストの置き場所と探索パターン
+testpaths = ["tests"]
+# src/ を import できるようにする（tests から src を参照するため）
+pythonpath = ["."]
+addopts = "-v"

@@ -7,6 +7,17 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 
 ---
 
+## 1.5 リファクタリング状況（2026-07-18〜）  ※移行中
+
+現在、アプリを「種類で割る」新フォルダ構成（`src/`・`tests/`・`master_data/`）へ段階的に移行している。パイロットとして **`id_generator` のみ移行済み**。他アプリ（`scp_checker`・`iv_strings_generator`・`tools`）は旧構成のまま。
+
+- **移行済み（id_generator）**：純粋ロジック＝`src/id_generator/`、共通のファイル読み込み＝`src/esal/`、テスト＝`tests/id_generator/`。データは `master_data/` を読む。エントリポイント `id_generator/app.py` は場所を変えず、`src/` を呼ぶ薄い UI 層に変更。
+- **旧構成（未移行）**：他アプリは従来どおり各フォルダの `app.py` に一体で実装し、`shared/` を参照する。
+- **一時的な二重管理**：`master_data/`（新）と `shared/`（旧）にデータが重複している。これは移行中の意図的な状態で、**全アプリ移行が完了したら `shared/` を削除**して解消する。
+
+下記「2. フォルダ構成」以降は、主に旧構成（未移行アプリ）を記述している。移行が進むごとに本資料を更新する。
+
+---
 ## 2. フォルダ構成
 
 ```
