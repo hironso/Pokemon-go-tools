@@ -9,10 +9,13 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 
 ## 1.5 リファクタリング状況（2026-07-18〜）  ※移行中
 
-現在、アプリを「種類で割る」新フォルダ構成（`src/`・`tests/`・`master_data/`）へ段階的に移行している。パイロットとして **`id_generator` のみ移行済み**。他アプリ（`scp_checker`・`iv_strings_generator`・`tools`）は旧構成のまま。
+現在、アプリを「種類で割る」新フォルダ構成（`src/`・`tests/`・`master_data/`）へ段階的に移行している。**`id_generator` と `iv_strings_generator` が移行済み**。他アプリ（`scp_checker`・`tools`）は旧構成のまま。
 
-- **移行済み（id_generator）**：純粋ロジック＝`src/id_generator/`、共通のファイル読み込み＝`src/esal/`、テスト＝`tests/id_generator/`。データは `master_data/` を読む。エントリポイント `id_generator/app.py` は場所を変えず、`src/` を呼ぶ薄い UI 層に変更。
-- **旧構成（未移行）**：他アプリは従来どおり各フォルダの `app.py` に一体で実装し、`shared/` を参照する。
+- **移行済み（id_generator）**：純粋ロジック＝`src/id_generator/`、ファイル読み込み＝`src/esal/pokedex_reader.py`、テスト＝`tests/id_generator/`。データは `master_data/` を読む。エントリポイント `id_generator/app.py` は場所を変えず、`src/` を呼ぶ薄い UI 層に変更。
+- **移行済み（iv_strings_generator）**：純粋ロジック＝`src/iv_strings_generator/`、ファイル読み込み＝`src/esal/iv_strings_reader.py`（進化マップ段構造・slim_cache）および `src/esal/pokedex_reader.py`（図鑑番号）、テスト＝`tests/iv_strings_generator/`。データは `master_data/`（`pokedex_numbers.txt`・`evolution_map.txt`・`slim_cache.json`・`iv_list_input_templete.txt`）を読む。エントリポイント `iv_strings_generator/app.py` は場所を変えず薄い UI 層に変更。
+- **共通処理層（library）新設**：`src/library/` に複数アプリ・ツールから呼ばれる純粋関数を集約。現在のメンバー：`expand_targets`（O/M/L 展開ロジック）。テストは `tests/library/`。
+- **slim_cache_builder 更新**：`tools/slim_cache_builder.py` が `src/esal.load_evolution_map_staged`・`src/library.expand_targets` を使用するよう変更。参照ファイルを `shared/` → `master_data/` に変更済み。
+- **旧構成（未移行）**：`scp_checker` は従来どおり各フォルダの `app.py` に一体で実装し、`shared/` を参照する。
 - **一時的な二重管理**：`master_data/`（新）と `shared/`（旧）にデータが重複している。これは移行中の意図的な状態で、**全アプリ移行が完了したら `shared/` を削除**して解消する。
 
 下記「2. フォルダ構成」以降は、主に旧構成（未移行アプリ）を記述している。移行が進むごとに本資料を更新する。
@@ -34,7 +37,32 @@ Pokemon-go-tools/
 │   ├── app.py
 │   └── requirements.txt
 │
-├── shared/                   # 全アプリ共通の参照ファイル
+├── src/
+│   ├── esal/                 # ファイル読み込み層（master_data/ の読み取りを集約）
+│   │   ├── __init__.py
+│   │   ├── pokedex_reader.py
+│   │   └── iv_strings_reader.py
+│   ├── library/              # 共通処理層（2か所以上から使われる純粋関数）
+│   │   ├── __init__.py
+│   │   └── expand_targets.py
+│   ├── id_generator/         # id_generator 機能層
+│   │   └── id_generator.py
+│   └── iv_strings_generator/ # iv_strings_generator 機能層
+│       └── iv_strings_generator.py
+│
+├── tests/
+│   ├── id_generator/
+│   ├── iv_strings_generator/
+│   └── library/              # library 層のテスト
+│
+├── master_data/              # データファイル（shared/ からの移行先）
+│   ├── pokedex_numbers.txt
+│   ├── evolution_map.txt
+│   ├── iv_list_input.txt
+│   ├── slim_cache.json
+│   └── iv_list_input_templete.txt
+│
+├── shared/                   # 旧構成（移行完了後に削除予定）
 │   ├── pokedex_numbers.txt
 │   ├── evolution_map.txt
 │   ├── iv_list_input.txt

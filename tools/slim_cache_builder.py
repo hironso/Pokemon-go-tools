@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 slim_cache_builder.py
 
@@ -27,28 +26,37 @@ slim_cache_builder.py
 配置：
   このファイルは tools/ フォルダに置く。
   参照ファイル：
-    ../shared/pokedex_numbers.txt
-    ../shared/evolution_map.txt
-    ../shared/iv_list_input.txt  ← iv_strings_generatorと共通
+    ../master_data/pokedex_numbers.txt
+    ../master_data/evolution_map.txt   （読み込みは esal の load_evolution_map_staged）
+    ../master_data/iv_list_input.txt
   出力ファイル：
-    ../shared/slim_cache.json
+    ../master_data/slim_cache.json
 """
 
-import os
 import json
 import math
+import os
+import sys
 from datetime import datetime
+
+# プロジェクトルートを import パスに追加し、src/（esal・library）を解決する
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.abspath(os.path.join(_TOOLS_DIR, ".."))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from src.esal.iv_strings_reader import load_evolution_map_staged  # noqa: E402
+from src.library.expand_targets import expand_targets  # noqa: E402
 
 # ============================================================
 # パス定義
 # ============================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SHARED_DIR = os.path.join(BASE_DIR, "..", "shared")
+MASTER_DATA_DIR = os.path.join(BASE_DIR, "..", "master_data")
 
-POKEDEX_FILE   = os.path.join(SHARED_DIR, "pokedex_numbers.txt")
-EVOLUTION_FILE = os.path.join(SHARED_DIR, "evolution_map.txt")
-INPUT_FILE     = os.path.join(SHARED_DIR, "iv_list_input.txt")
-OUTPUT_FILE    = os.path.join(SHARED_DIR, "slim_cache.json")
+POKEDEX_FILE = os.path.join(MASTER_DATA_DIR, "pokedex_numbers.txt")
+INPUT_FILE = os.path.join(MASTER_DATA_DIR, "iv_list_input.txt")
+OUTPUT_FILE = os.path.join(MASTER_DATA_DIR, "slim_cache.json")
 
 # ============================================================
 # 定数
@@ -65,33 +73,109 @@ SCRIPT_VERSION = "1.0"
 # CPM テーブル
 # ============================================================
 CPM = {
-    1.0: 0.094, 1.5: 0.135137432, 2.0: 0.16639787, 2.5: 0.192650919,
-    3.0: 0.21573247, 3.5: 0.236572661, 4.0: 0.25572005, 4.5: 0.273530381,
-    5.0: 0.29024988, 5.5: 0.306057377, 6.0: 0.3210876, 6.5: 0.335445036,
-    7.0: 0.34921268, 7.5: 0.362457751, 8.0: 0.37523559, 8.5: 0.387592406,
-    9.0: 0.39956728, 9.5: 0.411193551, 10.0: 0.42250001, 10.5: 0.432926419,
-    11.0: 0.44310755, 11.5: 0.4530599578, 12.0: 0.46279839, 12.5: 0.472336083,
-    13.0: 0.48168495, 13.5: 0.4908558, 14.0: 0.49985844, 14.5: 0.508701765,
-    15.0: 0.51739395, 15.5: 0.525942511, 16.0: 0.53435433, 16.5: 0.542635767,
-    17.0: 0.55079269, 17.5: 0.558830576, 18.0: 0.56675452, 18.5: 0.574569153,
-    19.0: 0.58227891, 19.5: 0.589887917, 20.0: 0.59740001, 20.5: 0.604818814,
-    21.0: 0.61215729, 21.5: 0.619404122, 22.0: 0.62656713, 22.5: 0.633649143,
-    23.0: 0.64065295, 23.5: 0.647580967, 24.0: 0.65443563, 24.5: 0.661219252,
-    25.0: 0.667934, 25.5: 0.674581896, 26.0: 0.68116492, 26.5: 0.687684904,
-    27.0: 0.69414365, 27.5: 0.70054287, 28.0: 0.70688421, 28.5: 0.713169109,
-    29.0: 0.71939909, 29.5: 0.725575614, 30.0: 0.7317, 30.5: 0.734741009,
-    31.0: 0.73776948, 31.5: 0.740785574, 32.0: 0.74378943, 32.5: 0.746781211,
-    33.0: 0.74976104, 33.5: 0.752729087, 34.0: 0.75568551, 34.5: 0.758630378,
-    35.0: 0.76156384, 35.5: 0.764486065, 36.0: 0.76739717, 36.5: 0.770297266,
-    37.0: 0.7731865, 37.5: 0.776064962, 38.0: 0.77893275, 38.5: 0.781790055,
-    39.0: 0.784637, 39.5: 0.787473608, 40.0: 0.7903, 40.5: 0.792803968,
-    41.0: 0.79530001, 41.5: 0.797803922, 42.0: 0.8003, 42.5: 0.802803893,
-    43.0: 0.8053, 43.5: 0.807803866, 44.0: 0.81029999, 44.5: 0.81280383,
-    45.0: 0.81529999, 45.5: 0.817803799, 46.0: 0.82029999, 46.5: 0.822803751,
-    47.0: 0.82529999, 47.5: 0.827803694, 48.0: 0.83029999, 48.5: 0.832803687,
-    49.0: 0.83529999, 49.5: 0.83780365, 50.0: 0.84029999, 50.5: 0.842803624,
+    1.0: 0.094,
+    1.5: 0.135137432,
+    2.0: 0.16639787,
+    2.5: 0.192650919,
+    3.0: 0.21573247,
+    3.5: 0.236572661,
+    4.0: 0.25572005,
+    4.5: 0.273530381,
+    5.0: 0.29024988,
+    5.5: 0.306057377,
+    6.0: 0.3210876,
+    6.5: 0.335445036,
+    7.0: 0.34921268,
+    7.5: 0.362457751,
+    8.0: 0.37523559,
+    8.5: 0.387592406,
+    9.0: 0.39956728,
+    9.5: 0.411193551,
+    10.0: 0.42250001,
+    10.5: 0.432926419,
+    11.0: 0.44310755,
+    11.5: 0.4530599578,
+    12.0: 0.46279839,
+    12.5: 0.472336083,
+    13.0: 0.48168495,
+    13.5: 0.4908558,
+    14.0: 0.49985844,
+    14.5: 0.508701765,
+    15.0: 0.51739395,
+    15.5: 0.525942511,
+    16.0: 0.53435433,
+    16.5: 0.542635767,
+    17.0: 0.55079269,
+    17.5: 0.558830576,
+    18.0: 0.56675452,
+    18.5: 0.574569153,
+    19.0: 0.58227891,
+    19.5: 0.589887917,
+    20.0: 0.59740001,
+    20.5: 0.604818814,
+    21.0: 0.61215729,
+    21.5: 0.619404122,
+    22.0: 0.62656713,
+    22.5: 0.633649143,
+    23.0: 0.64065295,
+    23.5: 0.647580967,
+    24.0: 0.65443563,
+    24.5: 0.661219252,
+    25.0: 0.667934,
+    25.5: 0.674581896,
+    26.0: 0.68116492,
+    26.5: 0.687684904,
+    27.0: 0.69414365,
+    27.5: 0.70054287,
+    28.0: 0.70688421,
+    28.5: 0.713169109,
+    29.0: 0.71939909,
+    29.5: 0.725575614,
+    30.0: 0.7317,
+    30.5: 0.734741009,
+    31.0: 0.73776948,
+    31.5: 0.740785574,
+    32.0: 0.74378943,
+    32.5: 0.746781211,
+    33.0: 0.74976104,
+    33.5: 0.752729087,
+    34.0: 0.75568551,
+    34.5: 0.758630378,
+    35.0: 0.76156384,
+    35.5: 0.764486065,
+    36.0: 0.76739717,
+    36.5: 0.770297266,
+    37.0: 0.7731865,
+    37.5: 0.776064962,
+    38.0: 0.77893275,
+    38.5: 0.781790055,
+    39.0: 0.784637,
+    39.5: 0.787473608,
+    40.0: 0.7903,
+    40.5: 0.792803968,
+    41.0: 0.79530001,
+    41.5: 0.797803922,
+    42.0: 0.8003,
+    42.5: 0.802803893,
+    43.0: 0.8053,
+    43.5: 0.807803866,
+    44.0: 0.81029999,
+    44.5: 0.81280383,
+    45.0: 0.81529999,
+    45.5: 0.817803799,
+    46.0: 0.82029999,
+    46.5: 0.822803751,
+    47.0: 0.82529999,
+    47.5: 0.827803694,
+    48.0: 0.83029999,
+    48.5: 0.832803687,
+    49.0: 0.83529999,
+    49.5: 0.83780365,
+    50.0: 0.84029999,
+    50.5: 0.842803624,
     51.0: 0.8453,
 }
+
 
 # ============================================================
 # バケット変換
@@ -108,27 +192,34 @@ def iv_to_bucket(iv: int) -> int:
     else:
         return 4
 
+
 # ============================================================
 # CP / SCP 計算
 # ============================================================
 def calc_cp(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, level):
     cpm = CPM[level]
     return math.floor(
-        ((base_atk + iv_atk)
-         * math.sqrt(base_def + iv_def)
-         * math.sqrt(base_sta + iv_hp)
-         * (cpm ** 2)) / 10.0
+        (
+            (base_atk + iv_atk)
+            * math.sqrt(base_def + iv_def)
+            * math.sqrt(base_sta + iv_hp)
+            * (cpm**2)
+        )
+        / 10.0
     )
+
 
 def calc_stats(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, level):
     cpm = CPM[level]
-    atk  = (base_atk + iv_atk) * cpm
+    atk = (base_atk + iv_atk) * cpm
     deff = (base_def + iv_def) * cpm
-    hp   = math.floor((base_sta + iv_hp) * cpm)
+    hp = math.floor((base_sta + iv_hp) * cpm)
     return atk, deff, hp
+
 
 def calc_scp(atk, deff, hp):
     return math.floor(((atk * deff * hp) ** (2.0 / 3.0)) / 10.0)
+
 
 def best_within_cap(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, cap_cp):
     best = None
@@ -144,6 +235,7 @@ def best_within_cap(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, cap_cp)
             best = {"level": level, "cp": cp, "atk": atk, "def": deff, "hp": hp, "scp": scp}
     return best
 
+
 # ============================================================
 # 全IV計算 → TopN件をslim形式に変換
 # ============================================================
@@ -156,19 +248,20 @@ def calc_slim_entries(base_stat, cap_cp, topn):
     for iv_atk in range(16):
         for iv_def in range(16):
             for iv_hp in range(16):
-                best = best_within_cap(base_atk, base_def, base_sta,
-                                       iv_atk, iv_def, iv_hp, cap_cp)
+                best = best_within_cap(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, cap_cp)
                 if best is None:
                     continue
-                results.append({
-                    "iv_atk": iv_atk,
-                    "iv_def": iv_def,
-                    "iv_hp":  iv_hp,
-                    "atk":    best["atk"],
-                    "scp":    best["scp"],
-                    "cp":     best["cp"],
-                    "level":  best["level"],
-                })
+                results.append(
+                    {
+                        "iv_atk": iv_atk,
+                        "iv_def": iv_def,
+                        "iv_hp": iv_hp,
+                        "atk": best["atk"],
+                        "scp": best["scp"],
+                        "cp": best["cp"],
+                        "level": best["level"],
+                    }
+                )
 
     # SCP → atk → cp → level の優先順位で降順ソート
     results.sort(
@@ -184,11 +277,12 @@ def calc_slim_entries(base_stat, cap_cp, topn):
     for rank, r in enumerate(results, 1):
         atk_b = iv_to_bucket(r["iv_atk"])
         def_b = iv_to_bucket(r["iv_def"])
-        hp_b  = iv_to_bucket(r["iv_hp"])
+        hp_b = iv_to_bucket(r["iv_hp"])
         atk_real = f"{r['atk']:.2f}"
         entries.append(f"{rank},{atk_b},{def_b},{hp_b},{atk_real}")
 
     return entries
+
 
 # ============================================================
 # pokedex_numbers.txt 読み込み
@@ -198,78 +292,56 @@ def load_pokedex():
         raise FileNotFoundError(f"[ERROR] pokedex_numbers.txt が見つかりません: {POKEDEX_FILE}")
 
     pokedex = {}
-    with open(POKEDEX_FILE, "r", encoding="utf-8") as f:
+    with open(POKEDEX_FILE, encoding="utf-8") as f:
         for line_number, line in enumerate(f, 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             if "\t" not in line:
-                raise ValueError(f"[ERROR] pokedex_numbers.txt {line_number}行目: タブ区切りではありません")
+                raise ValueError(
+                    f"[ERROR] pokedex_numbers.txt {line_number}行目: タブ区切りではありません"
+                )
             parts = [p.strip() for p in line.split("\t")]
             if len(parts) < 5:
                 raise ValueError(f"[ERROR] pokedex_numbers.txt {line_number}行目: 列数不足")
             name = parts[0]
             try:
-                dex      = int(parts[1])
-                hp_base  = int(parts[2])
+                dex = int(parts[1])
+                hp_base = int(parts[2])
                 atk_base = int(parts[3])
                 def_base = int(parts[4])
             except ValueError:
                 raise ValueError(f"[ERROR] pokedex_numbers.txt {line_number}行目: 数値変換失敗")
             pokedex[name] = {
-                "dex": dex, "hp_base": hp_base,
-                "atk_base": atk_base, "def_base": def_base,
+                "dex": dex,
+                "hp_base": hp_base,
+                "atk_base": atk_base,
+                "def_base": def_base,
             }
     return pokedex
 
-# ============================================================
-# evolution_map.txt 読み込み
-# ============================================================
-def load_evolution_map():
-    if not os.path.exists(EVOLUTION_FILE):
-        raise FileNotFoundError(f"[ERROR] evolution_map.txt が見つかりません: {EVOLUTION_FILE}")
-
-    evo_map = []
-    with open(EVOLUTION_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            tokens = [p.strip() for p in line.split(",") if p.strip()]
-            expanded = []
-            for tok in tokens:
-                if "/" in tok:
-                    expanded.extend([x.strip() for x in tok.split("/") if x.strip()])
-                else:
-                    expanded.append(tok)
-            seen = set()
-            family = []
-            for x in expanded:
-                if x not in seen:
-                    family.append(x)
-                    seen.add(x)
-            if family:
-                evo_map.append(family)
-    return evo_map
 
 # ============================================================
 # iv_list_input.txt パース
 # ============================================================
-def parse_input(evo_map, pokedex):
+def parse_input(evo_map_staged: list[list[list[str]]], pokedex: dict) -> dict:
+    """
+    iv_list_input.txt を読み込み、計算対象ポケモン×リーグを確定する。
+
+    Args:
+        evo_map_staged: load_evolution_map_staged の返り値（段構造を保持した進化マップ）。
+        pokedex: load_pokedex の返り値（ポケモン名 → 種族値辞書）。
+
+    Returns:
+        {ポケモン名: {リーグ: topn}} の辞書。
+        同じポケモン×リーグで複数行ある場合は最大TopNを採用。
+    """
     if not os.path.exists(INPUT_FILE):
         raise FileNotFoundError(f"[ERROR] iv_list_input.txt が見つかりません: {INPUT_FILE}")
 
-    # name -> family のマップを構築
-    name_to_family = {}
-    for family in evo_map:
-        for name in family:
-            name_to_family[name] = family
+    target_map: dict[str, dict[str, int]] = {}  # key: ポケモン名, value: {league: topn}
 
-    # 計算対象: {ポケモン名: {リーグ: topn}} を収集
-    # 同じポケモン×リーグで複数行ある場合は最大TopNを採用
-    target_map = {}  # key: ポケモン名, value: {league: topn}
-
-    with open(INPUT_FILE, "r", encoding="utf-8") as f:
+    with open(INPUT_FILE, encoding="utf-8") as f:
         for line_number, line in enumerate(f, 1):
             line = line.strip()
             if not line or line.startswith("#"):
@@ -280,20 +352,24 @@ def parse_input(evo_map, pokedex):
                 raise ValueError(f"[ERROR] iv_list_input.txt {line_number}行目: 形式不正")
 
             original_name = parts[0]
-            leagues_str   = parts[1]
-            topn_str      = parts[2]
-            targets_str   = parts[3].strip() if len(parts) >= 4 and parts[3].strip() else "L"
+            leagues_str = parts[1]
+            topn_str = parts[2]
+            targets_str = parts[3].strip() if len(parts) >= 4 and parts[3].strip() else "L"
 
             # ポケモン名チェック
             if original_name not in pokedex:
-                raise ValueError(f"[ERROR] pokedex_numbers.txt に「{original_name}」が見つかりません")
+                raise ValueError(
+                    f"[ERROR] pokedex_numbers.txt に「{original_name}」が見つかりません"
+                )
 
             # リーグパース
             leagues = []
             for lg in leagues_str.split(","):
                 lg = lg.strip()
                 if lg not in LEAGUE_CAPS:
-                    raise ValueError(f"[ERROR] iv_list_input.txt {line_number}行目: 不正なリーグ指定: {lg}")
+                    raise ValueError(
+                        f"[ERROR] iv_list_input.txt {line_number}行目: 不正なリーグ指定: {lg}"
+                    )
                 if lg not in leagues:
                     leagues.append(lg)
 
@@ -301,9 +377,13 @@ def parse_input(evo_map, pokedex):
             try:
                 topn = int(topn_str)
             except ValueError:
-                raise ValueError(f"[ERROR] iv_list_input.txt {line_number}行目: TopNが整数ではありません")
+                raise ValueError(
+                    f"[ERROR] iv_list_input.txt {line_number}行目: TopNが整数ではありません"
+                )
             if not (1 <= topn <= 4096):
-                raise ValueError(f"[ERROR] iv_list_input.txt {line_number}行目: TopNは1〜4096で指定してください")
+                raise ValueError(
+                    f"[ERROR] iv_list_input.txt {line_number}行目: TopNは1〜4096で指定してください"
+                )
 
             # 対象指定パース（O/M/L）
             if "," in targets_str:
@@ -311,29 +391,18 @@ def parse_input(evo_map, pokedex):
             else:
                 raw_targets = list(targets_str)
 
-            targets = []
+            targets: list[str] = []
             for t in raw_targets:
                 if t not in ("O", "M", "L"):
-                    raise ValueError(f"[ERROR] iv_list_input.txt {line_number}行目: 不正な対象指定: {t}")
+                    raise ValueError(
+                        f"[ERROR] iv_list_input.txt {line_number}行目: 不正な対象指定: {t}"
+                    )
                 if t not in targets:
                     targets.append(t)
 
-            # O/M/L展開 → 対象ポケモン種を確定
-            family = name_to_family.get(original_name)
-            fam = family if family else [original_name]
-            n = len(fam)
-
-            target_species = set()
-            for t in targets:
-                if t == "O":
-                    target_species.add(original_name)
-                elif t == "M":
-                    if n >= 3:
-                        target_species.add(fam[1])
-                    else:
-                        target_species.add(fam[-1])
-                elif t == "L":
-                    target_species.add(fam[-1])
+            # O/M/L展開 → 対象ポケモン種を確定（library.expand_targets に委譲）
+            # expand_targets は指定順・マップ収録順を保持したリストを返す
+            target_species = expand_targets(original_name, targets, evo_map_staged)
 
             # target_mapに登録（同じポケモン×リーグは最大TopNを採用）
             for sp_name in target_species:
@@ -347,6 +416,7 @@ def parse_input(evo_map, pokedex):
 
     return target_map
 
+
 # ============================================================
 # メイン処理
 # ============================================================
@@ -359,10 +429,10 @@ def main():
     print(f"  ポケモン種類数: {len(pokedex)}")
 
     print("evolution_map.txt を読み込み中...")
-    evo_map = load_evolution_map()
+    evo_map_staged = load_evolution_map_staged()
 
     print("iv_list_input.txt を解析中...")
-    target_map = parse_input(evo_map, pokedex)
+    target_map = parse_input(evo_map_staged, pokedex)
 
     total = sum(len(leagues) for leagues in target_map.values())
     print(f"  計算対象: {len(target_map)}種 × リーグ合計 {total}件")
@@ -370,8 +440,7 @@ def main():
     # 計算
     pokemon_entries = []
     count = 0
-    for name, league_topn in sorted(target_map.items(),
-                                     key=lambda x: pokedex[x[0]]["dex"]):
+    for name, league_topn in sorted(target_map.items(), key=lambda x: pokedex[x[0]]["dex"]):
         base_stat = pokedex[name]
         leagues_data = {}
 
@@ -386,11 +455,13 @@ def main():
                 "entries": entries,
             }
 
-        pokemon_entries.append({
-            "name": name,
-            "dex":  base_stat["dex"],
-            "leagues": leagues_data,
-        })
+        pokemon_entries.append(
+            {
+                "name": name,
+                "dex": base_stat["dex"],
+                "leagues": leagues_data,
+            }
+        )
 
     # JSON出力
     cache_object = {
