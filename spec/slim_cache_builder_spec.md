@@ -6,6 +6,7 @@
 |---|---|---|
 | 1.0 | （初版） | 変更前の仕様。進化マップを独自に読み込み、O/M/L 展開もツール内に独自実装していた版。 |
 | 1.1 | 2026-07-18 | 分岐進化の未収録バグに対応。進化マップの読み込みを esal（`load_evolution_map_staged`、段構造保持）に集約し、O/M/L 展開を library（`expand_targets`）に共通化した。ツール独自の「分岐を潰して 1 次元化し位置で展開する」方式は廃止。入出力パスを `shared/` から `master_data/` に統一。ツールが `src/`（esal・library）を参照する構成に変更。 |
+| 1.2 | 2026-07-19 | 構造を他アプリ（id_generator・iv_strings_generator・masterdata_builder）と同じ 4 層へリファクタリング。①実行部を `tools/slim_cache_builder.py` から**リポジトリ直下の専用フォルダ `slim_cache_builder/slim_cache_builder.py`** へ移動（薄い実行部）。②IV/CP/SCP 計算・slim 変換などの純粋ロジックを `src/slim_cache_builder/` へ分離。③pokedex 読み込みを esal に集約（既存 `pokedex_reader.py` の再利用を試みる）、slim_cache.json の書き込みも esal に置く。④`tests/slim_cache_builder/` を新規作成。処理ロジックの内容（計算・展開・出力書式）は変更しない。 |
 
 ---
 
@@ -15,14 +16,14 @@
 `scp_cache.json`（704MB）の代替として、必要なポケモン×リーグ×TopN件のデータのみを抽出した軽量キャッシュ（約4MB）を生成する。
 
 - **実行場所**: ローカルPC（Streamlitアプリではない）
-- **配置場所**: `tools/slim_cache_builder.py`
+- **配置場所**: `slim_cache_builder/slim_cache_builder.py`（リポジトリ直下の専用フォルダ。薄い実行部）
 - **実行方法**:
   ```bash
-  cd C:\GitHub\Pokemon-go-tools\tools
-  python slim_cache_builder.py
+  cd C:\GitHub\Pokemon-go-tools
+  python slim_cache_builder/slim_cache_builder.py
   ```
 
-> **本改訂（Rev1.1）で変わるのは「対象ポケモン×リーグの特定」（4章 Step1）だけである。** 全IV計算（Step2）・slim 形式への変換（Step3）・出力フォーマット（5章）は変更しない。
+> **本改訂（Rev1.2）は構造のリファクタリングのみで、処理ロジックの内容（計算・O/M/L 展開・出力書式）は変更しない。** 4 層構造（実行部・`src/slim_cache_builder/`・esal・library）へ分離し、テストを新設する。
 
 ---
 
@@ -30,7 +31,7 @@
 
 | ファイル | 場所 | 用途 |
 |---|---|---|
-| `pokedex_numbers.txt` | `master_data/` | ポケモンの種族値取得 |
+| `pokedex_numbers.txt` | `master_data/` | ポケモンの種族値取得（読み込みは esal に集約。既存 `pokedex_reader.py` の再利用を試みる） |
 | `evolution_map.txt` | `master_data/` | O/M/L 展開のためのファミリー特定（読み込みは esal、展開は library） |
 | `iv_list_input.txt` | `master_data/` | 計算対象のポケモン×リーグ×TopN を決定 |
 
@@ -158,15 +159,27 @@ rank,atk_bucket,def_bucket,hp_bucket,atk_real
 
 ## 8. ファイル構成
 
+他アプリと同じ 4 層構造に従う。
+
+| 層 | 場所 | 役割 |
+|---|---|---|
+| 実行部 | `slim_cache_builder/slim_cache_builder.py` | 薄い実行部。`src/` を解決し、各層を呼んで slim_cache を生成する。 |
+| ロジック | `src/slim_cache_builder/` | IV/CP/SCP 計算・slim 変換などの純粋ロジック。ここをテストする。 |
+| library | `src/library/` | `expand_targets`（O/M/L 展開。仕様は `library.md`）。 |
+| esal | `src/esal/` | ファイル読み書き。進化マップ＝`load_evolution_map_staged`、pokedex＝`pokedex_reader.py`（再利用を試みる）、slim_cache.json 書き込み。 |
+| test | `tests/slim_cache_builder/` | ロジック層のテスト。 |
+
 ```
-tools/
-└── slim_cache_builder.py   ← src/（esal・library）を参照する
+slim_cache_builder/
+└── slim_cache_builder.py   ← 薄い実行部。src/（esal・library・slim_cache_builder）を参照する
 
 src/
-├── esal/
-│   └── iv_strings_reader.py   ← load_evolution_map_staged（進化マップ読み込み）
-└── library/
-    └── （expand_targets を収録。仕様は library.md）
+├── slim_cache_builder/     ← 純粋ロジック（IV/CP/SCP 計算・slim 変換）
+├── esal/                   ← 読み書き（進化マップ・pokedex・slim_cache）
+└── library/                ← expand_targets（仕様は library.md）
+
+tests/
+└── slim_cache_builder/     ← ロジック層のテスト
 
 master_data/
 ├── pokedex_numbers.txt   ← 入力
@@ -182,8 +195,11 @@ master_data/
 恒久的な前提を以下にまとめる。
 
 - **リポジトリ構成（フォルダ・ファイル配置）の正は `spec/repository_overview.md` とする。** 本書はファイル構成図を参考として持つが、正ではない。
+- **4 層構造に従う**：実行部（`slim_cache_builder/slim_cache_builder.py`）は薄く保ち、計算ロジックは `src/slim_cache_builder/`、ファイル読み書きは esal に置く。依存の向きは他アプリと同じ（実行部・ロジック → library / esal）。
 - **進化マップの読み込み（段構造への変換）の正は esal の `load_evolution_map_staged`** とする。本ツールは進化マップを独自に読み込まない。
+- **pokedex の読み込みは esal に集約する。** 既存 `pokedex_reader.py` で足りるかを実装時に確認し、足りれば再利用する（自前の読み込みは持たない）。形式が合わず流用できない場合は、その旨を確認する。
+- **slim_cache.json の書き込みも esal に置く。**
 - **O/M/L 展開の正は `library.md`（`expand_targets`）とする。** 本ツールは展開ロジックを独自に持たない。
-- **本ツールは `src/`（esal・library）を参照する。** ローカル実行時に `src/` を解決できるようにする必要がある（解決方法は実装に委ねる）。
-- **入出力はすべて `master_data/` を用いる**（Rev1.1 で `shared/` から統一）。データ二重管理期間（`shared/`＝旧・`master_data/`＝新）においても、本ツールの入出力は `master_data/` を正とする。
-- 全IV計算（Step2）・slim 形式（Step3・5章）・バケット定義は本改訂で変更しない。
+- **本ツールは `src/`（esal・library・slim_cache_builder）を参照する。** ローカル実行時に `src/` を解決できるようにする必要がある（解決方法は実装に委ねる）。
+- **入出力はすべて `master_data/` を用いる**（Rev1.1 で `shared/` から統一）。
+- 処理ロジックの内容（IV/CP/SCP 計算・O/M/L 展開・slim 形式・バケット定義・出力書式）は Rev1.2 で変更しない。構造の分離のみを行う。

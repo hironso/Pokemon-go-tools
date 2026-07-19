@@ -16,7 +16,7 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 - **新規追加（masterdata_builder）**：`master_data/` の各ファイルへ新規ポケモンを追記するローカルツール（Streamlit）。純粋ロジック＝`src/masterdata_builder/`、ファイル読み書き＝`src/esal/masterdata_writer.py`（書き込み新設）および既存の `pokedex_reader.py`・`iv_strings_reader.py`（読み込み）、テスト＝`tests/masterdata_builder/`。エントリポイント `masterdata_builder/app.py`。Streamlit Community Cloud にはデプロイしない（ローカル実行専用）。
 - **共通処理層（library）新設**：`src/library/` に複数アプリ・ツールから呼ばれる純粋関数を集約。現在のメンバー：`expand_targets`（O/M/L 展開ロジック）。テストは `tests/library/`。
 - **esal の役割拡張**：`src/esal/` は読み込み専用層から、ファイルとの**読み書き両方**の境界層に拡張された（`masterdata_writer.py` の追加による）。
-- **slim_cache_builder 更新**：`tools/slim_cache_builder.py` が `src/esal.load_evolution_map_staged`・`src/library.expand_targets` を使用するよう変更。参照ファイルを `shared/` → `master_data/` に変更済み。
+- **移行済み（slim_cache_builder）**：実行部＝`slim_cache_builder/slim_cache_builder.py`（リポジトリ直下の専用フォルダ）、純粋ロジック＝`src/slim_cache_builder/`（IV/CP/SCP計算・slim変換・iv_list_inputパース）、ファイル読み込み＝`src/esal/pokedex_reader.py`（`load_pokedex_full`）・`src/esal/iv_strings_reader.py`（`load_evolution_map_staged`・`load_iv_list_input_raw`）、書き込み＝`src/esal/slim_cache_writer.py`（新設）、テスト＝`tests/slim_cache_builder/`。旧 `tools/slim_cache_builder.py` は削除済み。実行は `python slim_cache_builder/slim_cache_builder.py`。
 - **旧構成（未移行）**：`scp_checker` は従来どおり各フォルダの `app.py` に一体で実装し、`shared/` を参照する。
 - **一時的な二重管理**：`master_data/`（新）と `shared/`（旧）にデータが重複している。これは移行中の意図的な状態で、**全アプリ移行が完了したら `shared/` を削除**して解消する。
 
@@ -29,6 +29,9 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 Pokemon-go-tools/
 ├── masterdata_builder/       # マスターデータ登録ツール（ローカル実行 Streamlit アプリ）
 │   └── app.py
+│
+├── slim_cache_builder/       # slim_cache 生成ツール（ローカル実行。薄い実行部）
+│   └── slim_cache_builder.py
 │
 ├── scp_checker/              # SCPランクチェッカー（Streamlitアプリ）
 │   ├── app.py
@@ -45,9 +48,10 @@ Pokemon-go-tools/
 ├── src/
 │   ├── esal/                 # ファイル読み書き層（master_data/ との I/O を集約）
 │   │   ├── __init__.py
-│   │   ├── pokedex_reader.py
-│   │   ├── iv_strings_reader.py
-│   │   └── masterdata_writer.py  # 追記（書き込み）関数（masterdata_builder 向け）
+│   │   ├── pokedex_reader.py       # load_pokedex / load_pokedex_full / load_evolution_map
+│   │   ├── iv_strings_reader.py    # load_evolution_map_staged / load_slim_cache / load_iv_list_input_raw
+│   │   ├── masterdata_writer.py    # 追記（書き込み）関数（masterdata_builder 向け）
+│   │   └── slim_cache_writer.py    # slim_cache.json 書き込み（slim_cache_builder 向け）
 │   ├── library/              # 共通処理層（2か所以上から使われる純粋関数）
 │   │   ├── __init__.py
 │   │   └── expand_targets.py
@@ -55,14 +59,17 @@ Pokemon-go-tools/
 │   │   └── id_generator.py
 │   ├── iv_strings_generator/ # iv_strings_generator 機能層
 │   │   └── iv_strings_generator.py
-│   └── masterdata_builder/   # masterdata_builder 機能層
-│       └── masterdata_builder.py
+│   ├── masterdata_builder/   # masterdata_builder 機能層
+│   │   └── masterdata_builder.py
+│   └── slim_cache_builder/   # slim_cache_builder 機能層（IV/CP/SCP計算・slim変換）
+│       └── slim_cache_builder.py
 │
 ├── tests/
 │   ├── id_generator/
 │   ├── iv_strings_generator/
 │   ├── library/              # library 層のテスト
-│   └── masterdata_builder/   # masterdata_builder 機能層のテスト
+│   ├── masterdata_builder/   # masterdata_builder 機能層のテスト
+│   └── slim_cache_builder/   # slim_cache_builder 機能層のテスト
 │
 ├── master_data/              # データファイル（shared/ からの移行先）
 │   ├── pokedex_numbers.txt
@@ -79,8 +86,7 @@ Pokemon-go-tools/
 │   ├── rank_cheker_input_templete.txt
 │   └── iv_list_input_templete.txt
 │
-├── tools/                    # ローカルPC実行ツール（Streamlitアプリではない）
-│   ├── slim_cache_builder.py
+├── tools/                    # ローカルPC実行ツール（slim_cache_builder は移行済み）
 │   ├── data_checker.py
 │   ├── data_checker_support.txt
 │   └── data_checker_result.txt
@@ -98,7 +104,7 @@ Pokemon-go-tools/
 | IVサーチ文字列ジェネレーター | `iv_strings_generator/` | ボックス整理用の検索キーワードを生成 | `iv_strings_generator_spec.md` |
 | ポケモンID生成ツール | `id_generator/` | ポケモン名から図鑑番号リストを生成 | `id_generator_spec.md` |
 | マスターデータ登録ツール | `masterdata_builder/` | 新規ポケモンを master_data/ の各ファイルへ追記（ローカル実行） | `masterdata_builder_spec.md` |
-| slim_cache生成ツール | `tools/` | slim_cache.jsonを生成（ローカル実行） | `slim_cache_builder_spec.md` |
+| slim_cache生成ツール | `slim_cache_builder/` | slim_cache.jsonを生成（ローカル実行） | `slim_cache_builder_spec.md` |
 | 整合性チェックツール | `tools/` | ファイル間の整合性をチェック（ローカル実行） | `data_checker_spec.md` |
 
 ---
@@ -194,12 +200,20 @@ evolution_map.txt ────┼──► id_generator
 
 ## 8. ローカル実行ツール
 
-`tools/`フォルダ内のファイルはStreamlitアプリではなく、ローカルPCで直接実行するツール。
-GitHubには含まれているが、Streamlitにはデプロイされない。
+Streamlitアプリではなく、ローカルPCで直接実行するツール。GitHubには含まれているが、Streamlitにはデプロイされない。
+
+### slim_cache_builder/
 
 | ファイル | 実行タイミング |
 |---|---|
-| `slim_cache_builder.py` | ポケモン追加時・iv_list_input.txt変更時 |
+| `slim_cache_builder/slim_cache_builder.py` | ポケモン追加時・iv_list_input.txt変更時 |
+
+実行方法: `python slim_cache_builder/slim_cache_builder.py`（プロジェクトルートから）
+
+### tools/
+
+| ファイル | 実行タイミング |
+|---|---|
 | `data_checker.py` | ポケモン追加時（slim_cache生成の前後） |
 | `data_checker_support.txt` | data_checker.pyの警告抑止設定（手動編集） |
 | `data_checker_result.txt` | data_checker.pyの実行結果（自動生成） |

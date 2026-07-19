@@ -15,6 +15,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).parent.parent.parent
 _EVOLUTION_FILE = _REPO_ROOT / "master_data" / "evolution_map.txt"
 _SLIM_CACHE_FILE = _REPO_ROOT / "master_data" / "slim_cache.json"
+_IV_LIST_FILE = _REPO_ROOT / "master_data" / "iv_list_input.txt"
 
 
 def load_evolution_map_staged() -> list[list[list[str]]]:
@@ -46,6 +47,22 @@ def load_evolution_map_staged() -> list[list[list[str]]]:
             if stages:
                 evo_map.append(stages)
     return evo_map
+
+
+def load_iv_list_input_raw() -> list[str]:
+    """
+    iv_list_input.txt を読み込み、空行・# コメント行を除いた生テキスト行リストを返す。
+
+    行のトリムのみ行い、パース（フィールド分割・バリデーション）は呼び出し元（features 層）に任せる。
+    slim_cache_builder の parse_input などが対象。
+    """
+    lines: list[str] = []
+    with open(_IV_LIST_FILE, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                lines.append(line)
+    return lines
 
 
 def load_slim_cache() -> dict[str, dict]:  # type: ignore[type-arg]
