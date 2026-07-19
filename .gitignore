@@ -22,3 +22,6 @@ ClaudeCode対象外/
 
 # --- ツールの実行結果（出力ファイル） ---
 tools/data_checker_result.txt
+
+# Claude Code のローカル設定（自動生成・各環境固有）
+**/settings.local.json

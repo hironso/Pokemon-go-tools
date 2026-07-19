@@ -13,7 +13,9 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 
 - **移行済み（id_generator）**：純粋ロジック＝`src/id_generator/`、ファイル読み込み＝`src/esal/pokedex_reader.py`、テスト＝`tests/id_generator/`。データは `master_data/` を読む。エントリポイント `id_generator/app.py` は場所を変えず、`src/` を呼ぶ薄い UI 層に変更。
 - **移行済み（iv_strings_generator）**：純粋ロジック＝`src/iv_strings_generator/`、ファイル読み込み＝`src/esal/iv_strings_reader.py`（進化マップ段構造・slim_cache）および `src/esal/pokedex_reader.py`（図鑑番号）、テスト＝`tests/iv_strings_generator/`。データは `master_data/`（`pokedex_numbers.txt`・`evolution_map.txt`・`slim_cache.json`・`iv_list_input_templete.txt`）を読む。エントリポイント `iv_strings_generator/app.py` は場所を変えず薄い UI 層に変更。
+- **新規追加（masterdata_builder）**：`master_data/` の各ファイルへ新規ポケモンを追記するローカルツール（Streamlit）。純粋ロジック＝`src/masterdata_builder/`、ファイル読み書き＝`src/esal/masterdata_writer.py`（書き込み新設）および既存の `pokedex_reader.py`・`iv_strings_reader.py`（読み込み）、テスト＝`tests/masterdata_builder/`。エントリポイント `masterdata_builder/app.py`。Streamlit Community Cloud にはデプロイしない（ローカル実行専用）。
 - **共通処理層（library）新設**：`src/library/` に複数アプリ・ツールから呼ばれる純粋関数を集約。現在のメンバー：`expand_targets`（O/M/L 展開ロジック）。テストは `tests/library/`。
+- **esal の役割拡張**：`src/esal/` は読み込み専用層から、ファイルとの**読み書き両方**の境界層に拡張された（`masterdata_writer.py` の追加による）。
 - **slim_cache_builder 更新**：`tools/slim_cache_builder.py` が `src/esal.load_evolution_map_staged`・`src/library.expand_targets` を使用するよう変更。参照ファイルを `shared/` → `master_data/` に変更済み。
 - **旧構成（未移行）**：`scp_checker` は従来どおり各フォルダの `app.py` に一体で実装し、`shared/` を参照する。
 - **一時的な二重管理**：`master_data/`（新）と `shared/`（旧）にデータが重複している。これは移行中の意図的な状態で、**全アプリ移行が完了したら `shared/` を削除**して解消する。
@@ -25,6 +27,9 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 
 ```
 Pokemon-go-tools/
+├── masterdata_builder/       # マスターデータ登録ツール（ローカル実行 Streamlit アプリ）
+│   └── app.py
+│
 ├── scp_checker/              # SCPランクチェッカー（Streamlitアプリ）
 │   ├── app.py
 │   └── requirements.txt
@@ -38,22 +43,26 @@ Pokemon-go-tools/
 │   └── requirements.txt
 │
 ├── src/
-│   ├── esal/                 # ファイル読み込み層（master_data/ の読み取りを集約）
+│   ├── esal/                 # ファイル読み書き層（master_data/ との I/O を集約）
 │   │   ├── __init__.py
 │   │   ├── pokedex_reader.py
-│   │   └── iv_strings_reader.py
+│   │   ├── iv_strings_reader.py
+│   │   └── masterdata_writer.py  # 追記（書き込み）関数（masterdata_builder 向け）
 │   ├── library/              # 共通処理層（2か所以上から使われる純粋関数）
 │   │   ├── __init__.py
 │   │   └── expand_targets.py
 │   ├── id_generator/         # id_generator 機能層
 │   │   └── id_generator.py
-│   └── iv_strings_generator/ # iv_strings_generator 機能層
-│       └── iv_strings_generator.py
+│   ├── iv_strings_generator/ # iv_strings_generator 機能層
+│   │   └── iv_strings_generator.py
+│   └── masterdata_builder/   # masterdata_builder 機能層
+│       └── masterdata_builder.py
 │
 ├── tests/
 │   ├── id_generator/
 │   ├── iv_strings_generator/
-│   └── library/              # library 層のテスト
+│   ├── library/              # library 層のテスト
+│   └── masterdata_builder/   # masterdata_builder 機能層のテスト
 │
 ├── master_data/              # データファイル（shared/ からの移行先）
 │   ├── pokedex_numbers.txt
@@ -88,6 +97,7 @@ Pokemon-go-tools/
 | SCPランクチェッカー | `scp_checker/` | 手持ち個体のSCPランクとおすすめタグを計算 | `scp_checker_spec.md` |
 | IVサーチ文字列ジェネレーター | `iv_strings_generator/` | ボックス整理用の検索キーワードを生成 | `iv_strings_generator_spec.md` |
 | ポケモンID生成ツール | `id_generator/` | ポケモン名から図鑑番号リストを生成 | `id_generator_spec.md` |
+| マスターデータ登録ツール | `masterdata_builder/` | 新規ポケモンを master_data/ の各ファイルへ追記（ローカル実行） | `masterdata_builder_spec.md` |
 | slim_cache生成ツール | `tools/` | slim_cache.jsonを生成（ローカル実行） | `slim_cache_builder_spec.md` |
 | 整合性チェックツール | `tools/` | ファイル間の整合性をチェック（ローカル実行） | `data_checker_spec.md` |
 
