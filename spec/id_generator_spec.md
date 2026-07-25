@@ -115,5 +115,5 @@
 作りは実装に委ねるが、以下の3点は前提として必ず守ること。
 
 1. **エントリポイント `id_generator/app.py` は、現在の場所・ファイル名のまま維持する。** Streamlit Community Cloud のメインファイルパスに紐づいており、動かすと公開中のアプリが壊れるため。中身は薄い UI 層とし、ロジックは `src/` を呼び出す。
-2. **データファイルは `master_data/`（`pokedex_numbers.txt`・`evolution_map.txt`）を読む。** `shared/` は既存の他アプリが参照中のため、読み込み先にせず、編集もしない。
+2. **データファイルは `master_data/`（`pokedex_numbers.txt`・`evolution_map.txt`）を読む。**
 3. **フォルダ構成は種類で分ける（`src/`・`tests/`・`spec/`）。** id_generator 固有ロジック・共通部品・データ読み込みを層として分離し、テストしやすい構造にすること。
