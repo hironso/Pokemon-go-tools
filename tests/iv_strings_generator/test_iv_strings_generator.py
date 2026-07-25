@@ -483,7 +483,7 @@ class TestAssignAndRound:
         unit_for_pid1 = self._make_unit([1], [0, 1], [3, 4], [3, 4])
         units_for_pid4 = [self._make_unit([i + 2], [0, 1], [2, 3, 4], [2, 3, 4]) for i in range(39)]
         units = [unit_for_pid1] + units_for_pid4
-        threshold = int(len(units) * 0.052)  # = 2
+        threshold = int(len(units) * 0.065)  # = 2
         groups, individual_slot = _assign_and_round(units)
         for pid, ui in groups.items():
             assert len(ui) >= threshold, f"PID{pid} のユニット数 {len(ui)} が閾値 {threshold} 未満"
@@ -505,6 +505,58 @@ class TestAssignAndRound:
         assert individual_slot == []
         assert 1 in groups
         assert sorted(groups[1]) == [0, 1]
+
+    def test_round_robin_protects_merge_target_from_further_loosening(self) -> None:
+        """
+        巡回方式の検証（仕様書 8.5 検証済みの例）:
+        G_A(PID8, 22ユニット) と G_B(PID9, 23ユニット) が同じ合流先 P(PID12) に集まり、
+        P はその巡で保護されてこうげきを緩めず残ること。
+
+        構成:
+          - PID8 (a=1, d=2, h=1): 22ユニット → 1手で (1,1,1)=PID12 へ
+          - PID9 (a=1, d=1, h=2): 23ユニット → 1手で (1,1,1)=PID12 へ
+          - PID4 (a=1, d=2, h=2): 340ユニット（閾値以上で安定、丸めに巻き込まれない）
+          - 総ユニット数 = 385 → threshold = floor(385 × 0.065) = 25
+
+        巡回方式の期待:
+          1巡目: G_A→PID12(22)。PID12 は protected。G_B→PID12(45)。
+          2巡目: PID12(45≥25) → 対象外。終了。
+          結果: PID12 が残り、PID21(2,1,1) には進まない（こうげき緩まない）。
+
+        逐次方式だったら:
+          G_A→PID12(22<25)。PID12 が即座に最少として再選択され、
+          PID12→PID21(2,1,1) へ緩められてしまう。
+        """
+        # PID8 に収まるユニット: atk⊆{0,1}, def⊆{2,3,4}, hp⊆{1,2,3,4}
+        # def に 2 を含む & hp に 1 を含む → PID1〜7 に収まらず PID8 へ
+        units_pid8 = [self._make_unit([i + 1], [0, 1], [2, 3, 4], [1, 2, 3, 4]) for i in range(22)]
+        # PID9 に収まるユニット: atk⊆{0,1}, def⊆{1,2,3,4}, hp⊆{2,3,4}
+        # def に 1 を含む & hp に 2 を含む → PID1〜8 に収まらず PID9 へ
+        units_pid9 = [
+            self._make_unit([i + 100], [0, 1], [1, 2, 3, 4], [2, 3, 4]) for i in range(23)
+        ]
+        # PID4 に収まる安定グループ（340ユニット ≥ 25、丸めに巻き込まれない）
+        # atk⊆{0,1}, def⊆{2,3,4}, hp⊆{2,3,4} → PID1〜3 に収まらず PID4 へ
+        units_pid4 = [self._make_unit([i + 200], [0, 1], [2, 3, 4], [2, 3, 4]) for i in range(340)]
+        units = units_pid8 + units_pid9 + units_pid4
+        # 総ユニット数 = 385 → threshold = floor(385 × 0.065) = floor(25.025) = 25
+        assert int(len(units) * 0.065) == 25  # 前提条件の確認
+
+        groups, individual_slot = _assign_and_round(units)
+
+        # PID12 (1,1,1) に G_A + G_B = 45 ユニットが集まる
+        assert 12 in groups
+        assert len(groups[12]) == 45
+        # PID21 (2,1,1) は存在しない（こうげきが緩められていない）
+        assert 21 not in groups
+        # PID8, PID9 は空になっている
+        assert 8 not in groups
+        assert 9 not in groups
+        # 個別枠は空
+        assert individual_slot == []
+        # 全ユニット数が保存されている
+        total_in_groups = sum(len(ui) for ui in groups.values())
+        assert total_in_groups + len(individual_slot) == 385
 
 
 # ============================================================

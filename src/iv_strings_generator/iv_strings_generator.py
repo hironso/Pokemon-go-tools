@@ -534,9 +534,11 @@ def _assign_and_round(
       PID 昇順で最初に収まるパターンへ割り当てる。
       どのパターンにも収まらないユニットは個別枠へ入れる。
 
-    丸め込み（単一ループ, 8.5）:
-      有効閾値 = floor(総ユニット数 × 0.052) を 1 度だけ算出し固定する。
-      「アクティブグループのうちユニット数が有効閾値未満のものを最少から移動」を繰り返す。
+    丸め込み（巡回＝ラウンド方式, 8.5）:
+      有効閾値 = floor(総ユニット数 × 0.065) を 1 度だけ算出し固定する。
+      1 巡ごとに閾値未満のグループを全部集め、ユニット数昇順に各 1 回だけ緩める。
+      合流先になったグループはその巡では保護し、再び緩めない。
+      閾値未満のグループが無くなるまで巡を繰り返す。
       グループ数の上限は設けない（Rev1.2 で 6 上限を廃止）。
 
     Returns:
@@ -559,29 +561,44 @@ def _assign_and_round(
             # どのパターンにも収まらない（こうげき4 等）→ 個別枠へ
             individual_slot.append(idx)
 
-    # ---- 丸め込み（単一ループ, 8.5）----
-    # 有効閾値: floor(総ユニット数 × 0.052)。個別枠のユニットも総数に含む。
+    # ---- 丸め込み（巡回＝ラウンド方式, 8.5）----
+    # 有効閾値: floor(総ユニット数 × 0.065)。個別枠のユニットも総数に含む。
     # int() は正の値に対して floor と等価（Python は 0 方向への整数切り捨て）。
-    threshold = int(len(units) * 0.052)
+    threshold = int(len(units) * 0.065)
 
     while True:
-        # アクティブグループのうちユニット数が有効閾値未満のものを探す
+        # 巡の開始: 閾値未満のアクティブグループを全部集める
         candidates = [pid for pid, ui in groups.items() if ui and len(ui) < threshold]
         if not candidates:
             break
-        # ユニット数最少・同数なら PID 最小（より厳しいパターン）を選ぶ
-        smallest_pid = min(candidates, key=lambda pid: (len(groups[pid]), pid))
-        a, d, h = _PID_TO_ADH[smallest_pid]
-        next_adh = _one_step(a, d, h)
-        if next_adh is None:
-            # 対象外領域に到達 → 個別枠へ（仕様書 8.4）
-            individual_slot.extend(groups[smallest_pid])
-            groups[smallest_pid] = []
-        else:
-            next_pid = _ADH_TO_PID[next_adh]
-            # 空パターンでもくっつけ先にできる（仕様書 8.4）
-            groups[next_pid].extend(groups[smallest_pid])
-            groups[smallest_pid] = []
+
+        # ユニット数昇順（同数なら PID 昇順 = より厳しいグループ優先）
+        candidates.sort(key=lambda pid: (len(groups[pid]), pid))
+
+        # この巡で合流先になった PID を保護するセット
+        protected: set[int] = set()
+
+        for pid in candidates:
+            # 合流先になったグループはこの巡では緩めない（仕様書 8.5）
+            if pid in protected:
+                continue
+            # この巡の先行処理で空になった場合もスキップ
+            if not groups[pid]:
+                continue
+
+            a, d, h = _PID_TO_ADH[pid]
+            next_adh = _one_step(a, d, h)
+            if next_adh is None:
+                # 対象外領域に到達 → 個別枠へ（仕様書 8.4）
+                individual_slot.extend(groups[pid])
+                groups[pid] = []
+            else:
+                next_pid = _ADH_TO_PID[next_adh]
+                # 空パターンでもくっつけ先にできる（仕様書 8.4）
+                groups[next_pid].extend(groups[pid])
+                groups[pid] = []
+                # 合流先を保護: この巡ではもう緩めない
+                protected.add(next_pid)
 
     # 空グループを除いて返す
     return {pid: ui for pid, ui in groups.items() if ui}, individual_slot
