@@ -2,312 +2,82 @@
 """
 scp_checker/app.py
 
-Streamlit版 SCPランクチェッカー
-- input.txt をアップロードして SCPランク・おすすめタグを計算・表示する
-- scp_cache.json は使わず、リアルタイム計算に変更
-- pokedex_numbers.txt は shared/ フォルダから参照
-- シャドウポケモン対応：ポケモン名先頭Sでシャドウ判定、通常・シャドウを別グループで計算
+SCPランクチェッカー - Streamlit エントリポイント（薄い UI 層）。
+ロジックは src/scp_checker/scp_checker.py（features 層）に委譲する。
+ファイル読み込みは src/esal/ に委譲する。
+例外の捕捉と画面表示はこの層に集約する。
 """
 
-import math
-import os
-import hashlib
+import sys
+from pathlib import Path
+
 import streamlit as st
-from collections import defaultdict
-from io import StringIO
+
+# streamlit run はこの app.py があるフォルダ（scp_checker/）を起点に import を探すため、
+# 1つ上のプロジェクトルート（src/ がある場所）を import 経路に加える。
+# Path(__file__) 基準で解決するので、どこから起動しても・Streamlit Cloud でも動く。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from src.esal.pokedex_reader import load_pokedex_full  # noqa: E402
+from src.esal.scp_checker_reader import load_rank_checker_template  # noqa: E402
+from src.scp_checker.scp_checker import (  # noqa: E402
+    apply_bulk_replace,
+    assign_recommend_tags,
+    base_name,
+    calculate_results,
+    format_output,
+    is_shadow,
+    parse_rank_input,
+)
 
 # ============================================================
-# パス定義
+# ページ設定
 # ============================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-POKEDEX_FILE = os.path.join(BASE_DIR, "..", "shared", "pokedex_numbers.txt")
-
-# ============================================================
-# CPM テーブル
-# ============================================================
-CPM = {
-    1.0: 0.094, 1.5: 0.135137432, 2.0: 0.16639787, 2.5: 0.192650919,
-    3.0: 0.21573247, 3.5: 0.236572661, 4.0: 0.25572005, 4.5: 0.273530381,
-    5.0: 0.29024988, 5.5: 0.306057377, 6.0: 0.3210876, 6.5: 0.335445036,
-    7.0: 0.34921268, 7.5: 0.362457751, 8.0: 0.37523559, 8.5: 0.387592406,
-    9.0: 0.39956728, 9.5: 0.411193551, 10.0: 0.42250001, 10.5: 0.432926419,
-    11.0: 0.44310755, 11.5: 0.4530599578, 12.0: 0.46279839, 12.5: 0.472336083,
-    13.0: 0.48168495, 13.5: 0.4908558, 14.0: 0.49985844, 14.5: 0.508701765,
-    15.0: 0.51739395, 15.5: 0.525942511, 16.0: 0.53435433, 16.5: 0.542635767,
-    17.0: 0.55079269, 17.5: 0.558830576, 18.0: 0.56675452, 18.5: 0.574569153,
-    19.0: 0.58227891, 19.5: 0.589887917, 20.0: 0.59740001, 20.5: 0.604818814,
-    21.0: 0.61215729, 21.5: 0.619404122, 22.0: 0.62656713, 22.5: 0.633649143,
-    23.0: 0.64065295, 23.5: 0.647580967, 24.0: 0.65443563, 24.5: 0.661219252,
-    25.0: 0.667934, 25.5: 0.674581896, 26.0: 0.68116492, 26.5: 0.687684904,
-    27.0: 0.69414365, 27.5: 0.70054287, 28.0: 0.70688421, 28.5: 0.713169109,
-    29.0: 0.71939909, 29.5: 0.725575614, 30.0: 0.7317, 30.5: 0.734741009,
-    31.0: 0.73776948, 31.5: 0.740785574, 32.0: 0.74378943, 32.5: 0.746781211,
-    33.0: 0.74976104, 33.5: 0.752729087, 34.0: 0.75568551, 34.5: 0.758630378,
-    35.0: 0.76156384, 35.5: 0.764486065, 36.0: 0.76739717, 36.5: 0.770297266,
-    37.0: 0.7731865, 37.5: 0.776064962, 38.0: 0.77893275, 38.5: 0.781790055,
-    39.0: 0.784637, 39.5: 0.787473608, 40.0: 0.7903, 40.5: 0.792803968,
-    41.0: 0.79530001, 41.5: 0.797803922, 42.0: 0.8003, 42.5: 0.802803893,
-    43.0: 0.8053, 43.5: 0.807803866, 44.0: 0.81029999, 44.5: 0.81280383,
-    45.0: 0.81529999, 45.5: 0.817803799, 46.0: 0.82029999, 46.5: 0.822803751,
-    47.0: 0.82529999, 47.5: 0.827803694, 48.0: 0.83029999, 48.5: 0.832803687,
-    49.0: 0.83529999, 49.5: 0.83780365, 50.0: 0.84029999, 50.5: 0.842803624,
-    51.0: 0.8453,
-}
-
-LEAGUE_CAPS = {"S": 1500, "H": 2500, "M": None}
-LEAGUE_NAMES = {"S": "スーパー", "H": "ハイパー", "M": "マスター"}
-
-# ============================================================
-# 計算ロジック（scp_cache_builder.py から移植）
-# ============================================================
-def calc_stats(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, level):
-    cpm = CPM[level]
-    atk = (base_atk + iv_atk) * cpm
-    deff = (base_def + iv_def) * cpm
-    hp = math.floor((base_sta + iv_hp) * cpm)
-    return atk, deff, hp
-
-def calc_cp(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, level):
-    cpm = CPM[level]
-    return math.floor(
-        ((base_atk + iv_atk)
-         * math.sqrt(base_def + iv_def)
-         * math.sqrt(base_sta + iv_hp)
-         * (cpm ** 2)) / 10.0
-    )
-
-def calc_scp(atk, deff, hp):
-    return math.floor(((atk * deff * hp) ** (2.0 / 3.0)) / 10.0)
-
-def best_within_cap(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, cap_cp):
-    best = None
-    for level in [x * 0.5 for x in range(2, 103)]:
-        if level not in CPM:
-            continue
-        cp = calc_cp(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, level)
-        if (cap_cp is not None) and (cp > cap_cp):
-            break
-        atk, deff, hp = calc_stats(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, level)
-        scp = calc_scp(atk, deff, hp)
-        if best is None or scp > best["scp"]:
-            best = {"level": level, "cp": cp, "atk": atk, "def": deff, "hp": hp, "scp": scp}
-    return best
-
-def get_rank(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, cap_cp):
-    """指定IVのSCPランクを計算して返す（全4096IVを評価）"""
-    target = best_within_cap(base_atk, base_def, base_sta, iv_atk, iv_def, iv_hp, cap_cp)
-    if target is None:
-        return None
-
-    target_scp = target["scp"]
-    target_atk = target["atk"]
-
-    rank = 1
-    for a in range(16):
-        for d in range(16):
-            for h in range(16):
-                if (a, d, h) == (iv_atk, iv_def, iv_hp):
-                    continue
-                other = best_within_cap(base_atk, base_def, base_sta, a, d, h, cap_cp)
-                if other is None:
-                    continue
-                if (other["scp"], other["atk"]) > (target_scp, target_atk):
-                    rank += 1
-    return {**target, "rank": rank}
-
-# ============================================================
-# pokedex_numbers.txt 読み込み（キャッシュ付き）
-# ============================================================
-@st.cache_data
-def load_pokedex():
-    if not os.path.exists(POKEDEX_FILE):
-        return None, f"pokedex_numbers.txt が見つかりません: {POKEDEX_FILE}"
-    pokedex = {}
-    with open(POKEDEX_FILE, "r", encoding="utf-8") as f:
-        for line_number, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = [p.strip() for p in line.split("\t")]
-            if len(parts) < 5:
-                continue
-            name = parts[0]
-            try:
-                dex = int(parts[1])
-                hp_base = int(parts[2])
-                atk_base = int(parts[3])
-                def_base = int(parts[4])
-            except ValueError:
-                continue
-            pokedex[name] = {"dex": dex, "hp_base": hp_base, "atk_base": atk_base, "def_base": def_base}
-    return pokedex, None
-
-# ============================================================
-# シャドウ判定ユーティリティ
-# ============================================================
-def is_shadow_name(name, pokedex):
-    """ポケモン名の先頭がSかつS除き名がpokedexに存在すればシャドウと判定"""
-    return name.startswith("S") and name[1:] in pokedex
-
-def to_shadow_name(name, pokedex):
-    """通常名をシャドウ名に変換（既にS付きなら変換しない）"""
-    if is_shadow_name(name, pokedex):
-        return name
-    return "S" + name
-
-def base_name(name, pokedex):
-    """シャドウ名から通常名を取得（通常名はそのまま返す）"""
-    if is_shadow_name(name, pokedex):
-        return name[1:]
-    return name
-
-# ============================================================
-# input.txt パース
-# ============================================================
-def parse_input(text, pokedex):
-    requests = []
-    errors = []
-    for i, line in enumerate(text.splitlines(), 1):
-        raw = line.strip()
-        if not raw or raw.startswith("#"):
-            continue
-        parts = raw.split("/")
-        if len(parts) != 5:
-            errors.append(f"{i}行目: 形式不正 → {raw}")
-            continue
-        name, league = parts[0].strip(), parts[1].strip()
-        # シャドウ判定
-        shadow = is_shadow_name(name, pokedex)
-        if league not in LEAGUE_CAPS:
-            errors.append(f"{i}行目: 不正なリーグ → {league}")
-            continue
-        try:
-            def parse_iv(v):
-                try:
-                    return int(v, 10)
-                except ValueError:
-                    return int(v, 16)
-            iv_a, iv_d, iv_h = (parse_iv(v) for v in parts[2:])
-        except ValueError:
-            errors.append(f"{i}行目: IVが数値ではありません → {raw}")
-            continue
-        if not all(0 <= v <= 15 for v in (iv_a, iv_d, iv_h)):
-            errors.append(f"{i}行目: IV範囲不正(0-15) → {raw}")
-            continue
-        requests.append((name, league, iv_a, iv_d, iv_h, shadow))
-    return requests, errors
-
-# ============================================================
-# おすすめタグ判定（scp_rank_calc.py から移植）
-# ============================================================
-def ceil_percent(value, rate):
-    return math.ceil(value * rate)
-
-def pick_best(candidates):
-    return sorted(
-        candidates,
-        key=lambda x: (-x["atk"], -x["scp"], -x["hp"], x["rank"], x["input_index"])
-    )[0]
-
-def pick_top2(candidates):
-    """候補の中から上位2件を返す（1件しかない場合は1件のみ）"""
-    sorted_cands = sorted(
-        candidates,
-        key=lambda x: (-x["atk"], -x["scp"], -x["hp"], x["rank"], x["input_index"])
-    )
-    return sorted_cands[:2]
-
-
-def get_top1_scp(base_atk, base_def, base_sta, cap_cp):
-    """全4096IV中のSCP最大値を返す"""
-    top1_scp = 0
-    for a in range(16):
-        for d in range(16):
-            for h in range(16):
-                result = best_within_cap(base_atk, base_def, base_sta, a, d, h, cap_cp)
-                if result and result["scp"] > top1_scp:
-                    top1_scp = result["scp"]
-    return top1_scp
-
-def judge_tags(group, top1_scp):
-    tags = defaultdict(set)
-
-    # ★SCP最大（1体のみ）
-    max_scp = max(p["scp"] for p in group)
-    scp_max_candidates = [p for p in group if p["scp"] == max_scp]
-    best = pick_best(scp_max_candidates)
-    tags[best["idx"]].add("★SCP最大")
-
-    ref_scp1 = top1_scp
-
-    # ★SCP重視（1位・2位）
-    t = ceil_percent(ref_scp1, 0.99)
-    cands = [p for p in group if p["scp"] >= t]
-    if not cands:
-        cands = [min(group, key=lambda x: x["rank"])]
-    top2 = pick_top2(cands)
-    tags[top2[0]["idx"]].add("★SCP重視1位")
-    if len(top2) >= 2:
-        tags[top2[1]["idx"]].add("★SCP重視2位")
-
-    # ★バランス（1位・2位）
-    t1 = ceil_percent(ref_scp1, 0.988)
-    c1 = [p for p in group if p["scp"] >= t1]
-    tmp = pick_best(c1) if c1 else min(group, key=lambda x: x["rank"])
-    t2 = ceil_percent(tmp["scp"], 0.9975)
-    c2 = [p for p in group if p["scp"] >= t2]
-    cands = c2 if c2 else [tmp]
-    top2 = pick_top2(cands)
-    tags[top2[0]["idx"]].add("★バランス1位")
-    if len(top2) >= 2:
-        tags[top2[1]["idx"]].add("★バランス2位")
-
-    # ★攻撃重視（1位・2位）
-    t1 = ceil_percent(ref_scp1, 0.985)
-    c1 = [p for p in group if p["scp"] >= t1]
-    tmp = pick_best(c1) if c1 else min(group, key=lambda x: x["rank"])
-    t2 = ceil_percent(tmp["scp"], 0.996)
-    c2 = [p for p in group if p["scp"] >= t2]
-    cands = c2 if c2 else [tmp]
-    top2 = pick_top2(cands)
-    tags[top2[0]["idx"]].add("★攻撃重視1位")
-    if len(top2) >= 2:
-        tags[top2[1]["idx"]].add("★攻撃重視2位")
-
-    return tags
-
-# ============================================================
-# Streamlit UI
-# ============================================================
-st.set_page_config(page_title="SCPランクチェッカー", page_icon="🎮", layout="wide")
+st.set_page_config(
+    page_title="SCPランクチェッカー",
+    page_icon="🎮",
+    layout="wide",  # 画面幅いっぱいに表示（仕様書 9-1 章）
+)
 st.title("🎮 SCPランクチェッカー")
 
-# pokedex読み込み
-pokedex, pokedex_error = load_pokedex()
-if pokedex_error:
-    st.error(pokedex_error)
+# ============================================================
+# 起動時データ読み込み（@st.cache_data でセッション内キャッシュ）
+# エラーが出た時点で画面にエラーを表示し、以降の処理を停止する
+# ============================================================
+
+
+@st.cache_data
+def _cached_load_pokedex() -> dict:
+    return load_pokedex_full()
+
+
+@st.cache_data
+def _cached_load_template() -> bytes:
+    return load_rank_checker_template()
+
+
+try:
+    _pokedex = _cached_load_pokedex()
+except FileNotFoundError as e:
+    # load_pokedex_full は open() を直接呼ぶため、e.filename にパスが入る
+    path = e.filename if e.filename else str(e)
+    st.error(f"pokedex_numbers.txt が見つかりません: {path}")
     st.stop()
 
-st.success(f"図鑑データ読み込み済み（{len(pokedex)}種）")
+try:
+    _template_bytes = _cached_load_template()
+except FileNotFoundError as e:
+    # load_rank_checker_template は仕様書文言のメッセージを raise する
+    st.error(str(e))
+    st.stop()
 
-# テンプレートダウンロード
-TEMPLATE_FILE = os.path.join(BASE_DIR, "..", "shared", "rank_cheker_input_templete.txt")
-if os.path.exists(TEMPLATE_FILE):
-    with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
-        template_text = f.read()
-    st.download_button(
-        label="📥 テンプレートをダウンロード（rank_cheker_input_templete.txt）",
-        data=template_text.encode("utf-8"),
-        file_name="rank_cheker_input_templete.txt",
-        mime="text/plain",
-    )
+st.success(f"図鑑データ読み込み済み（{len(_pokedex)}種）")
 
 # ============================================================
-# 入力モード選択
+# Session state 初期化
 # ============================================================
-input_mode = st.radio("入力方法を選択", ["フォームで入力", "ファイルをアップロード"], horizontal=True)
-
-# session_stateの初期化
 if "form_requests" not in st.session_state:
     st.session_state.form_requests = []
 if "form_name" not in st.session_state:
@@ -317,51 +87,115 @@ if "form_league" not in st.session_state:
 if "form_shadow" not in st.session_state:
     st.session_state.form_shadow = False
 
-requests = []
+requests: list[tuple] = []
+
+# ============================================================
+# 入力方法の選択
+# ============================================================
+input_mode = st.radio(
+    "入力方法を選択",
+    ["フォームで入力", "ファイルをアップロード"],
+    horizontal=True,
+)
 
 # ============================================================
 # フォーム入力モード
 # ============================================================
 if input_mode == "フォームで入力":
 
-    # ポケモン名・リーグ・シャドウ（フォーム外）
+    # ポケモン名・リーグ一括置換パネル
+    # Rev1.1 変更点：「入力方法を選択」の直後・ポケモン名入力欄の直前に配置
+    # 表示条件：リストの件数に関わらず常に表示（旧実装では 1 件以上のときのみ）
+    with st.expander("ポケモン名・リーグを一括置換"):
+        _LEAGUE_OPTIONS = ["変更なし", "S", "H", "M"]
+        col1, col2 = st.columns(2)
+        with col1:
+            st.caption("置換前")
+            replace_name_from = st.text_input(
+                "ポケモン名（空欄=全対象）",
+                placeholder="例：リザードン",
+                key="replace_name_from",
+            )
+            replace_league_from = st.selectbox(
+                "リーグ", _LEAGUE_OPTIONS, key="replace_league_from"
+            )
+        with col2:
+            st.caption("置換後")
+            replace_name_to = st.text_input(
+                "ポケモン名（空欄=変更なし）",
+                placeholder="例：リザードン",
+                key="replace_name_to",
+            )
+            replace_league_to = st.selectbox(
+                "リーグ", _LEAGUE_OPTIONS, key="replace_league_to"
+            )
+
+        if st.button("置換実行"):
+            name_from = replace_name_from.strip()
+            name_to = replace_name_to.strip()
+            new_list, success_msg, err_msg = apply_bulk_replace(
+                st.session_state.form_requests,
+                name_from,
+                replace_league_from,
+                name_to,
+                replace_league_to,
+                _pokedex,
+            )
+            if err_msg:
+                if err_msg == "条件に一致する行がリストに存在しません。":
+                    st.warning(err_msg)
+                else:
+                    st.error(err_msg)
+            else:
+                st.session_state.form_requests = new_list
+                st.success(success_msg)
+                st.rerun()
+
+    # ポケモン名・リーグ・シャドウ（フォーム外に置き、送信後も値を保持）
     col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
         name_input = st.text_input(
             "ポケモン名",
             value=st.session_state.form_name,
             placeholder="例：カメックス",
-            key="name_input_field"
+            key="name_input_field",
         )
     with col2:
         league_input = st.selectbox(
             "リーグ",
             ["S", "H", "M"],
             index=["S", "H", "M"].index(st.session_state.form_league),
-            key="league_input_field"
+            key="league_input_field",
         )
     with col3:
         st.write("")
         shadow_input = st.checkbox(
             "シャドウ",
             value=st.session_state.form_shadow,
-            key="shadow_input_field"
+            key="shadow_input_field",
         )
 
-    # ポケモン名・リーグ・シャドウをsession_stateに保持
     st.session_state.form_name = name_input
     st.session_state.form_league = league_input
     st.session_state.form_shadow = shadow_input
 
-    # IV入力フォーム
+    # IV 入力フォーム
+    # Rev1.1 変更点：text_input から number_input に変更。初期値は未入力（value=None）。
+    # clear_on_submit=True により、追加後に IV 欄は未入力状態に戻る。
     with st.form("iv_form", clear_on_submit=True):
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
-            iv_a_str = st.text_input("攻撃IV", value="", placeholder="0〜15")
+            iv_a = st.number_input(
+                "攻撃IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15"
+            )
         with col2:
-            iv_d_str = st.text_input("防御IV", value="", placeholder="0〜15")
+            iv_d = st.number_input(
+                "防御IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15"
+            )
         with col3:
-            iv_h_str = st.text_input("HP IV", value="", placeholder="0〜15")
+            iv_h = st.number_input(
+                "HP IV", min_value=0, max_value=15, value=None, step=1, placeholder="0〜15"
+            )
         with col4:
             st.write("")
             st.write("")
@@ -369,54 +203,34 @@ if input_mode == "フォームで入力":
 
         if submitted:
             name = st.session_state.form_name.strip()
-            league = st.session_state.form_league
-            # IV値のバリデーション
-            iv_errors = []
-            iv_vals = []
-            for label, val_str in [("攻撃IV", iv_a_str), ("防御IV", iv_d_str), ("HP IV", iv_h_str)]:
-                val_str = val_str.strip()
-                if val_str == "":
-                    iv_vals.append(0)
-                else:
-                    try:
-                        try:
-                            v = int(val_str, 10)
-                        except ValueError:
-                            v = int(val_str, 16)
-                        if not (0 <= v <= 15):
-                            iv_errors.append(f"{label}は0〜15で入力してください（入力値：{v}）")
-                        else:
-                            iv_vals.append(v)
-                    except ValueError:
-                        iv_errors.append(f"{label}に数値以外が入力されています（入力値：{val_str}）")
 
             if not name:
                 st.error("ポケモン名を入力してください。")
+            elif iv_a is None or iv_d is None or iv_h is None:
+                # Rev1.1 変更点：未入力 IV がある場合はエラー（旧実装では 0 として扱っていた）
+                st.error("未入力のIVがあります")
             else:
-                # シャドウ判定：チェックボックスまたはポケモン名先頭S
+                # シャドウ判定：チェックボックスまたはポケモン名先頭 S
                 cb_shadow = st.session_state.form_shadow
-                name_shadow = is_shadow_name(name, pokedex)
-
-                if cb_shadow or name_shadow:
-                    # シャドウ：先頭Sが既についていなければ付ける
-                    display_name = name if name_shadow else "S" + name
-                    is_shadow = True
+                name_is_shadow = is_shadow(name, _pokedex)
+                if cb_shadow or name_is_shadow:
+                    display_name = name if name_is_shadow else "S" + name
+                    shadow_flag = True
                 else:
                     display_name = name
-                    is_shadow = False
+                    shadow_flag = False
 
-                # pokedexバリデーション（S除き名で検索）
-                lookup_name = base_name(display_name, pokedex)
-                if lookup_name not in pokedex:
+                # pokedex バリデーション（S 除き名で検索）
+                # エラーメッセージにはシャドウ補完前の入力値をそのまま表示する（仕様書 2 章）
+                lookup = base_name(display_name, _pokedex)
+                if lookup not in _pokedex:
                     st.error(f"「{name}」はpokedex_numbers.txtに存在しません。")
-                elif iv_errors:
-                    for e in iv_errors:
-                        st.error(e)
                 else:
-                    iv_a_val, iv_d_val, iv_h_val = iv_vals
-                    st.session_state.form_requests.append((display_name, league, iv_a_val, iv_d_val, iv_h_val, is_shadow))
+                    st.session_state.form_requests.append(
+                        (display_name, league_input, int(iv_a), int(iv_d), int(iv_h), shadow_flag)
+                    )
 
-    # 追加済みリスト
+    # 追加済みリスト（1 件以上のときのみ見出しと一覧を表示）
     if st.session_state.form_requests:
         st.subheader(f"追加済みリスト（{len(st.session_state.form_requests)}件）")
         for i, (n, lg, a, d, h, sw) in enumerate(st.session_state.form_requests):
@@ -428,77 +242,18 @@ if input_mode == "フォームで入力":
                     st.session_state.form_requests.pop(i)
                     st.rerun()
 
-        # ポケモン名・リーグ一括置換
-        with st.expander("ポケモン名・リーグを一括置換"):
-            LEAGUE_OPTIONS = ["変更なし", "S", "H", "M"]
-            col1, col2 = st.columns(2)
-            with col1:
-                st.caption("置換前")
-                replace_name_from = st.text_input("ポケモン名（空欄=全対象）", placeholder="例：リザードン", key="replace_name_from")
-                replace_league_from = st.selectbox("リーグ", LEAGUE_OPTIONS, key="replace_league_from")
-            with col2:
-                st.caption("置換後")
-                replace_name_to = st.text_input("ポケモン名（空欄=変更なし）", placeholder="例：リザードン", key="replace_name_to")
-                replace_league_to = st.selectbox("リーグ", LEAGUE_OPTIONS, key="replace_league_to")
-
-            if st.button("置換実行"):
-                # 置換前・置換後ともに何も指定されていない場合
-                name_from = replace_name_from.strip()
-                name_to = replace_name_to.strip()
-                league_from = replace_league_from
-                league_to = replace_league_to
-
-                if not name_from and league_from == "変更なし":
-                    st.error("置換前のポケモン名またはリーグを指定してください。")
-                elif not name_to and league_to == "変更なし":
-                    st.error("置換後のポケモン名またはリーグを指定してください。")
-                else:
-                    # 置換後ポケモン名のpokedexバリデーション
-                    valid = True
-                    if name_to:
-                        lookup_to = base_name(name_to, pokedex)
-                        if lookup_to not in pokedex:
-                            st.error(f"「{name_to}」はpokedex_numbers.txtに存在しません。")
-                            valid = False
-
-                    if valid:
-                        # 対象行の特定
-                        def is_target(n, lg):
-                            name_match = (not name_from) or (n == name_from)
-                            league_match = (league_from == "変更なし") or (lg == league_from)
-                            return name_match and league_match
-
-                        count = sum(1 for n, lg, _, _, _, _ in st.session_state.form_requests if is_target(n, lg))
-                        if count == 0:
-                            st.warning("条件に一致する行がリストに存在しません。")
-                        else:
-                            def apply_replace(n, lg, a, d, h, sw):
-                                if not is_target(n, lg):
-                                    return (n, lg, a, d, h, sw)
-                                new_name = name_to if name_to else n
-                                new_league = league_to if league_to != "変更なし" else lg
-                                new_shadow = is_shadow_name(new_name, pokedex)
-                                return (new_name, new_league, a, d, h, new_shadow)
-
-                            st.session_state.form_requests = [
-                                apply_replace(n, lg, a, d, h, sw)
-                                for n, lg, a, d, h, sw in st.session_state.form_requests
-                            ]
-                            msg_parts = []
-                            if name_from:
-                                msg_parts.append(f"名前「{name_from}」→「{name_to if name_to else '変更なし'}」")
-                            if league_from != "変更なし":
-                                msg_parts.append(f"リーグ「{league_from}」→「{league_to if league_to != '変更なし' else '変更なし'}」")
-                            st.success(f"{' / '.join(msg_parts)} を{count}件置換しました。")
-                            st.rerun()
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("🗑️ リストをクリア"):
-                st.session_state.form_requests = []
-                st.rerun()
-        with col2:
-            if st.button("✅ 計算実行", type="primary"):
+    # クリア・計算実行ボタン（件数に関わらず常に表示）
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("🗑️ リストをクリア"):
+            st.session_state.form_requests = []
+            st.rerun()
+    with col2:
+        if st.button("✅ 計算実行", type="primary"):
+            if not st.session_state.form_requests:
+                # Rev1.1 変更点：0 件のまま計算実行した場合は警告を表示する
+                st.warning("有効な行がありません。")
+            else:
                 requests = list(st.session_state.form_requests)
 
 # ============================================================
@@ -516,12 +271,18 @@ else:
             "プクリン/S/2/14/6\n"
             "Sプクリン/S/1/13/6\n"
             "ラッキー/H/15/15/15",
-            language="text"
+            language="text",
         )
+    st.download_button(
+        label="📥 テンプレートをダウンロード（rank_cheker_input_templete.txt）",
+        data=_template_bytes,
+        file_name="rank_cheker_input_templete.txt",
+        mime="text/plain",
+    )
 
     if uploaded is not None:
         text = uploaded.read().decode("utf-8")
-        parsed, errors = parse_input(text, pokedex)
+        parsed, errors = parse_rank_input(text, _pokedex)
         if errors:
             st.error("入力エラーがあります：")
             for e in errors:
@@ -537,111 +298,25 @@ else:
 # ============================================================
 if requests:
     st.info(f"{len(requests)}件を計算します。しばらくお待ちください...")
-    progress = st.progress(0)
+    _progress_bar = st.progress(0)
 
-    rows = []
-    for idx, (name, league, iv_a, iv_d, iv_h, shadow) in enumerate(requests):
-        # pokedexはS除き名で検索
-        lookup = base_name(name, pokedex)
-        entry = pokedex.get(lookup)
-        if not entry:
-            st.error(f"ポケモンが見つかりません: {name}")
-            st.stop()
-
-        cap_cp = LEAGUE_CAPS[league]
-        result = get_rank(entry["atk_base"], entry["def_base"], entry["hp_base"], iv_a, iv_d, iv_h, cap_cp)
-        if result is None:
-            st.error(f"計算失敗: {name}/{league}/{iv_a}/{iv_d}/{iv_h}")
-            st.stop()
-
-        rows.append({
-            "idx": idx,
-            "input": f"{name}/{iv_a}/{iv_d}/{iv_h}",
-            "input_index": idx,
-            "league": league,
-            "name": name,
-            "shadow": shadow,
-            **result,
-        })
-        progress.progress((idx + 1) / len(requests))
-
-    # おすすめタグ判定（通常・シャドウを別グループ）
-    groups = defaultdict(list)
-    for r in rows:
-        groups[(r["name"], r["league"], r["shadow"])].append(r)
-
-    tag_map = defaultdict(set)
-    for (name, league, shadow), g in groups.items():
-        lookup = base_name(name, pokedex)
-        entry = pokedex[lookup]
-        cap_cp = LEAGUE_CAPS[league]
-        top1_scp = get_top1_scp(entry["atk_base"], entry["def_base"], entry["hp_base"], cap_cp)
-        t = judge_tags(g, top1_scp)
-        for k, v in t.items():
-            tag_map[k].update(v)
-
-    # 結果表示
-    st.success("計算完了！")
-
-    # output.txt 生成
-    input_width = max(len(r["input"]) for r in rows) + 2
-    HEADER_OFFSET = 5
-    header_left = input_width + HEADER_OFFSET
-
-    lines = []
-    lines.append("# おすすめタグの選定条件")
-    lines.append("# ★SCP最大  : 入力個体の中でSCPが最も高い個体")
-    lines.append("#")
-    lines.append("# ★SCP重視1位・2位 : SCP1位の99%以上の中で攻撃実数値が高い順に2体")
-    lines.append("#              用途：あまり使われないポケモンで攻撃実数値も無視したくない場合")
-    lines.append("#")
-    lines.append("# ★バランス1位・2位 : SCP1位の98.8%以上の中で攻撃実数値最大の個体を基準に")
-    lines.append("#              そのSCPの99.75%以上の中で攻撃実数値が高い順に2体")
-    lines.append("#              ※2段階絞り込みの理由：SCPがほぼ同じ（99.75%以内）なら")
-    lines.append("#               攻撃実数値を優先するため。SCPを犠牲にしすぎない設計。")
-    lines.append("#              用途：多用されるポケモンでミラー対面の同発を意識する場合")
-    lines.append("#")
-    lines.append("# ★攻撃重視1位・2位 : SCP1位の98.5%以上の中で攻撃実数値最大の個体を基準に")
-    lines.append("#              そのSCPの99.6%以上の中で攻撃実数値が高い順に2体")
-    lines.append("#              ※2段階絞り込みの理由：バランスより許容範囲を広げ（99.6%）")
-    lines.append("#               より積極的に攻撃実数値を優先する設計。")
-    lines.append("#              用途：攻撃実数値重視の相手にも同発で勝ちたい場合")
-    lines.append("")
-    header = (
-        f"{'':<{header_left}}"
-        f"{'League':<7} {'SCPRANK':<8} {'SCP':<4} {'ATK':<6} {'DEF':<6} {'HP':<3} {'CP':<4} {'Level':<5}"
-    )
-    lines.append(header)
-
-    prev_name = None
-    prev_league = None
-    prev_shadow = None
-    for r in rows:
-        if prev_name is not None and (r["name"] != prev_name or r["league"] != prev_league or r["shadow"] != prev_shadow):
-            lines.append("")
-        prev_name = r["name"]
-        prev_league = r["league"]
-        prev_shadow = r["shadow"]
-
-        line = (
-            f"{r['input']:<{input_width}}"
-            f"{r['league']:<7} {r['rank']:04d}     {r['scp']:<4} "
-            f"{r['atk']:<6.2f} {r['def']:<6.2f} "
-            f"{r['hp']:<3} {r['cp']:<4} {r['level']:<5.1f}"
+    try:
+        rows = calculate_results(
+            requests,
+            _pokedex,
+            on_progress=lambda curr, total: _progress_bar.progress(curr / total),
         )
-        tags = " ".join(sorted(tag_map[r["idx"]]))
-        rb = "[RB] " if r["level"] > 50.0 else ""
-        if rb or tags:
-            line += "  " + rb + tags
-        lines.append(line)
+    except ValueError as e:
+        st.error(str(e))
+        st.stop()
 
-    output_text = "\n".join(lines)
+    tag_map = assign_recommend_tags(rows, _pokedex)
+    output_text = format_output(rows, tag_map)
 
-    # 画面表示
+    st.success("計算完了！")
     st.subheader("結果")
     st.code(output_text, language="text")
 
-    # ダウンロード
     st.download_button(
         label="📥 output.txt をダウンロード",
         data=output_text.encode("utf-8"),

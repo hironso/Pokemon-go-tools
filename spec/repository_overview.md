@@ -9,7 +9,7 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 
 ## 1.5 リファクタリング状況（2026-07-18〜）  ※移行中
 
-現在、アプリを「種類で割る」新フォルダ構成（`src/`・`tests/`・`master_data/`）へ段階的に移行している。**`id_generator` と `iv_strings_generator` が移行済み**。他アプリ（`scp_checker`・`tools`）は旧構成のまま。
+現在、アプリを「種類で割る」新フォルダ構成（`src/`・`tests/`・`master_data/`）へ段階的に移行している。**`id_generator`・`iv_strings_generator`・`masterdata_builder`・`slim_cache_builder`・`scp_checker` がすべて移行済み**。
 
 - **移行済み（id_generator）**：純粋ロジック＝`src/id_generator/`、ファイル読み込み＝`src/esal/pokedex_reader.py`、テスト＝`tests/id_generator/`。データは `master_data/` を読む。エントリポイント `id_generator/app.py` は場所を変えず、`src/` を呼ぶ薄い UI 層に変更。
 - **移行済み（iv_strings_generator）**：純粋ロジック＝`src/iv_strings_generator/`、ファイル読み込み＝`src/esal/iv_strings_reader.py`（進化マップ段構造・slim_cache）および `src/esal/pokedex_reader.py`（図鑑番号）、テスト＝`tests/iv_strings_generator/`。データは `master_data/`（`pokedex_numbers.txt`・`evolution_map.txt`・`slim_cache.json`・`iv_list_input_templete.txt`）を読む。エントリポイント `iv_strings_generator/app.py` は場所を変えず薄い UI 層に変更。
@@ -17,10 +17,10 @@ GitHubリポジトリ `hironso/Pokemon-go-tools` にて管理し、Streamlit Com
 - **共通処理層（library）新設**：`src/library/` に複数アプリ・ツールから呼ばれる純粋関数を集約。現在のメンバー：`expand_targets`（O/M/L 展開ロジック）。テストは `tests/library/`。
 - **esal の役割拡張**：`src/esal/` は読み込み専用層から、ファイルとの**読み書き両方**の境界層に拡張された（`masterdata_writer.py` の追加による）。
 - **移行済み（slim_cache_builder）**：実行部＝`slim_cache_builder/slim_cache_builder.py`（リポジトリ直下の専用フォルダ）、純粋ロジック＝`src/slim_cache_builder/`（IV/CP/SCP計算・slim変換・iv_list_inputパース）、ファイル読み込み＝`src/esal/pokedex_reader.py`（`load_pokedex_full`）・`src/esal/iv_strings_reader.py`（`load_evolution_map_staged`・`load_iv_list_input_raw`）、書き込み＝`src/esal/slim_cache_writer.py`（新設）、テスト＝`tests/slim_cache_builder/`。旧 `tools/slim_cache_builder.py` は削除済み。実行は `python slim_cache_builder/slim_cache_builder.py`。
-- **旧構成（未移行）**：`scp_checker` は従来どおり各フォルダの `app.py` に一体で実装し、`shared/` を参照する。
-- **一時的な二重管理**：`master_data/`（新）と `shared/`（旧）にデータが重複している。これは移行中の意図的な状態で、**全アプリ移行が完了したら `shared/` を削除**して解消する。
+- **移行済み（scp_checker）**：純粋ロジック＝`src/scp_checker/`（SCP計算・タグ判定・出力フォーマット・一括置換）、ファイル読み込み＝`src/esal/pokedex_reader.py`（`load_pokedex_full`）・`src/esal/scp_checker_reader.py`（テンプレートファイル。新設）、テスト＝`tests/scp_checker/`。データは `master_data/`（`pokedex_numbers.txt`・`rank_cheker_input_templete.txt`）を読む。エントリポイント `scp_checker/app.py` は場所を変えず薄い UI 層に変更。
+- **移行完了・`shared/` 削除待ち**：全アプリの移行が完了した。`shared/` は削除予定。
 
-下記「2. フォルダ構成」以降は、主に旧構成（未移行アプリ）を記述している。移行が進むごとに本資料を更新する。
+下記「2. フォルダ構成」以降は、全アプリ移行完了後の構成を記述している。
 
 ---
 ## 2. フォルダ構成
@@ -51,7 +51,8 @@ Pokemon-go-tools/
 │   │   ├── pokedex_reader.py       # load_pokedex / load_pokedex_full / load_evolution_map
 │   │   ├── iv_strings_reader.py    # load_evolution_map_staged / load_slim_cache / load_iv_list_input_raw
 │   │   ├── masterdata_writer.py    # 追記（書き込み）関数（masterdata_builder 向け）
-│   │   └── slim_cache_writer.py    # slim_cache.json 書き込み（slim_cache_builder 向け）
+│   │   ├── slim_cache_writer.py    # slim_cache.json 書き込み（slim_cache_builder 向け）
+│   │   └── scp_checker_reader.py   # テンプレートファイル読み込み（scp_checker 向け）
 │   ├── library/              # 共通処理層（2か所以上から使われる純粋関数）
 │   │   ├── __init__.py
 │   │   └── expand_targets.py
@@ -61,22 +62,26 @@ Pokemon-go-tools/
 │   │   └── iv_strings_generator.py
 │   ├── masterdata_builder/   # masterdata_builder 機能層
 │   │   └── masterdata_builder.py
-│   └── slim_cache_builder/   # slim_cache_builder 機能層（IV/CP/SCP計算・slim変換）
-│       └── slim_cache_builder.py
+│   ├── slim_cache_builder/   # slim_cache_builder 機能層（IV/CP/SCP計算・slim変換）
+│   │   └── slim_cache_builder.py
+│   └── scp_checker/          # scp_checker 機能層（SCP計算・タグ判定・出力フォーマット等）
+│       └── scp_checker.py
 │
 ├── tests/
 │   ├── id_generator/
 │   ├── iv_strings_generator/
 │   ├── library/              # library 層のテスト
 │   ├── masterdata_builder/   # masterdata_builder 機能層のテスト
-│   └── slim_cache_builder/   # slim_cache_builder 機能層のテスト
+│   ├── slim_cache_builder/   # slim_cache_builder 機能層のテスト
+│   └── scp_checker/          # scp_checker 機能層のテスト
 │
 ├── master_data/              # データファイル（shared/ からの移行先）
 │   ├── pokedex_numbers.txt
 │   ├── evolution_map.txt
 │   ├── iv_list_input.txt
 │   ├── slim_cache.json
-│   └── iv_list_input_templete.txt
+│   ├── iv_list_input_templete.txt
+│   └── rank_cheker_input_templete.txt
 │
 ├── shared/                   # 旧構成（移行完了後に削除予定）
 │   ├── pokedex_numbers.txt
