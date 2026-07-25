@@ -7,9 +7,15 @@ expand_targets は純粋関数なので get_search_targets・validate_search_row
 """
 
 from src.masterdata_builder.masterdata_builder import (
+    EvoMapCheckResult,
+    IvListRowCheckResult,
     MemberInput,
+    PokedexMemberCheckResult,
     SearchRow,
     build_combined_evo_map,
+    check_evolution_map,
+    check_iv_list,
+    check_pokedex_members,
     collect_all_iv_lines,
     extract_evo_map_names,
     find_duplicates,
@@ -441,3 +447,210 @@ class TestCollectAllIvLines:
             "フシギダネ/S,H/200/L",
             "ガルーラ/S/1000/O",
         ]
+
+
+# ============================================================
+# 照合テスト用共通データ（Rev1.5）
+# ============================================================
+
+# load_pokedex_full の返り値と同じ形式 {名前: {dex, hp_base, atk_base, def_base}}
+_POKEDEX_FULL: dict[str, dict[str, int]] = {
+    "フシギダネ": {"dex": 1, "hp_base": 90, "atk_base": 118, "def_base": 111},
+    "フシギソウ": {"dex": 2, "hp_base": 120, "atk_base": 151, "def_base": 143},
+    "フシギバナ": {"dex": 3, "hp_base": 160, "atk_base": 198, "def_base": 189},
+}
+
+# check_evolution_map 専用の evo_map_staged
+_EVO_MAP_FOR_EVO_CHECK: list[list[list[str]]] = [
+    [["フシギダネ"], ["フシギソウ"], ["フシギバナ"]],
+    [["ヤドン"], ["ヤドラン", "ヤドキング"]],
+]
+
+
+# ============================================================
+# check_pokedex_members
+# ============================================================
+
+
+class TestCheckPokedexMembers:
+    def test_new_member_not_in_pokedex(self) -> None:
+        """未登録のメンバー → status="new", existing=None"""
+        members = [MemberInput(name="ガルーラ", dex=115, hp=130, atk=192, defense=219)]
+        results = check_pokedex_members(members, _POKEDEX_FULL)
+        assert len(results) == 1
+        assert results[0].status == "new"
+        assert results[0].existing is None
+
+    def test_same_content_member(self) -> None:
+        """登録済み・内容一致 → status="same", existing=None"""
+        members = [MemberInput(name="フシギダネ", dex=1, hp=90, atk=118, defense=111)]
+        results = check_pokedex_members(members, _POKEDEX_FULL)
+        assert results[0].status == "same"
+        assert results[0].existing is None
+
+    def test_diff_dex_member(self) -> None:
+        """登録済み・図鑑番号不一致 → status="diff", existing に既存データ"""
+        members = [MemberInput(name="フシギダネ", dex=999, hp=90, atk=118, defense=111)]
+        results = check_pokedex_members(members, _POKEDEX_FULL)
+        assert results[0].status == "diff"
+        assert results[0].existing is not None
+        assert results[0].existing["dex"] == 1  # 既存の値
+
+    def test_diff_stats_member(self) -> None:
+        """登録済み・種族値不一致 → status="diff"""
+        members = [MemberInput(name="フシギダネ", dex=1, hp=999, atk=118, defense=111)]
+        results = check_pokedex_members(members, _POKEDEX_FULL)
+        assert results[0].status == "diff"
+
+    def test_diff_result_contains_existing_values_not_input(self) -> None:
+        """diff 時の existing は既存データの値（入力値ではない）"""
+        members = [MemberInput(name="フシギダネ", dex=1, hp=90, atk=999, defense=111)]
+        results = check_pokedex_members(members, _POKEDEX_FULL)
+        assert results[0].status == "diff"
+        existing = results[0].existing
+        assert existing is not None
+        assert existing["atk"] == 118  # 既存の正しい値（入力の 999 ではない）
+
+    def test_multiple_members_mixed_statuses(self) -> None:
+        """複数メンバー、new / same / diff が混在する"""
+        members = [
+            MemberInput(name="フシギダネ", dex=1, hp=90, atk=118, defense=111),  # same
+            MemberInput(name="ガルーラ", dex=115, hp=130, atk=192, defense=219),  # new
+            MemberInput(name="フシギソウ", dex=2, hp=999, atk=151, defense=143),  # diff
+        ]
+        results = check_pokedex_members(members, _POKEDEX_FULL)
+        assert len(results) == 3
+        assert results[0].status == "same"
+        assert results[1].status == "new"
+        assert results[2].status == "diff"
+
+    def test_empty_members_returns_empty(self) -> None:
+        """メンバーリストが空 → 空リスト"""
+        assert check_pokedex_members([], _POKEDEX_FULL) == []
+
+    def test_member_not_in_empty_pokedex_is_new(self) -> None:
+        """既存 pokedex が空 → すべて "new"""
+        members = [MemberInput(name="フシギダネ", dex=1, hp=90, atk=118, defense=111)]
+        results = check_pokedex_members(members, {})
+        assert results[0].status == "new"
+
+
+# ============================================================
+# check_evolution_map
+# ============================================================
+
+
+class TestCheckEvolutionMap:
+    def test_new_family_not_in_evo_map(self) -> None:
+        """入力系統のメンバーが既存に1人もいない → "new"""
+        stages = [["コラッタ"], ["ラッタ"]]
+        result = check_evolution_map(stages, _EVO_MAP_FOR_EVO_CHECK)
+        assert result.status == "new"
+        assert result.existing_stages is None
+
+    def test_same_family_exact_match_linear(self) -> None:
+        """入力段構造が既存と完全一致（直線3段）→ "same"""
+        stages = [["フシギダネ"], ["フシギソウ"], ["フシギバナ"]]
+        result = check_evolution_map(stages, _EVO_MAP_FOR_EVO_CHECK)
+        assert result.status == "same"
+        assert result.existing_stages is None
+
+    def test_same_family_exact_match_branched(self) -> None:
+        """入力段構造が既存と完全一致（分岐2段）→ "same"""
+        stages = [["ヤドン"], ["ヤドラン", "ヤドキング"]]
+        result = check_evolution_map(stages, _EVO_MAP_FOR_EVO_CHECK)
+        assert result.status == "same"
+
+    def test_diff_partial_name_overlap(self) -> None:
+        """一部の名前だけ既存にある（段構造が不一致）→ "diff", existing_stages に既存段構造"""
+        # フシギダネだけ既存に一致するが、段構造が違う
+        stages = [["フシギダネ"], ["フシギバナ"]]  # フシギソウを飛ばした誤った構造
+        result = check_evolution_map(stages, _EVO_MAP_FOR_EVO_CHECK)
+        assert result.status == "diff"
+        assert result.existing_stages == [["フシギダネ"], ["フシギソウ"], ["フシギバナ"]]
+
+    def test_diff_branch_member_missing(self) -> None:
+        """分岐先が欠けている（既存と段数は同じだが分岐が違う）→ "diff"""
+        stages = [["ヤドン"], ["ヤドラン"]]  # ヤドキングが欠けている
+        result = check_evolution_map(stages, _EVO_MAP_FOR_EVO_CHECK)
+        assert result.status == "diff"
+        assert result.existing_stages == [["ヤドン"], ["ヤドラン", "ヤドキング"]]
+
+    def test_empty_evo_map_returns_new(self) -> None:
+        """既存マップが空 → "new"""
+        result = check_evolution_map([["フシギダネ"], ["フシギバナ"]], [])
+        assert result.status == "new"
+
+
+# ============================================================
+# check_iv_list
+# ============================================================
+
+
+class TestCheckIvList:
+    def test_no_existing_lines_all_new(self) -> None:
+        """既存行なし → 全行 "new"""
+        rows = [SearchRow("フシギダネ", ["S"], 200, ["L"])]
+        results = check_iv_list(rows, [], _EVO_MAP)
+        assert len(results) == 1
+        assert results[0].status == "new"
+        assert results[0].conflicting_lines == []
+
+    def test_exact_same_target_skipped(self) -> None:
+        """同じ対象×リーグが既存にある（同じ名前・同じリーグ）→ "skipped"""
+        rows = [SearchRow("フシギバナ", ["S"], 200, ["O"])]
+        existing = ["フシギバナ/S/1000/O"]
+        results = check_iv_list(rows, existing, _EVO_MAP)
+        assert results[0].status == "skipped"
+        assert "フシギバナ/S/1000/O" in results[0].conflicting_lines
+
+    def test_different_notation_same_target_skipped(self) -> None:
+        """表記は違うが展開後の対象×リーグが同じ → "skipped"
+
+        サイホーン/S/500/L（展開→ドサイドン）vs 既存 ドサイドン/S/1000/O（展開→ドサイドン）
+        は、どちらも (ドサイドン, S) の組み合わせを含む。
+        """
+        evo_map_with_rhyhorn = _EVO_MAP + [[["サイホーン"], ["ドサイドン"]]]
+        rows = [SearchRow("サイホーン", ["S"], 500, ["L"])]
+        existing = ["ドサイドン/S/1000/O"]
+        results = check_iv_list(rows, existing, evo_map_with_rhyhorn)
+        assert results[0].status == "skipped"
+        assert "ドサイドン/S/1000/O" in results[0].conflicting_lines
+
+    def test_different_league_not_skipped(self) -> None:
+        """同じポケモンでもリーグが異なれば重複なし → "new"""
+        rows = [SearchRow("フシギバナ", ["H"], 200, ["O"])]
+        existing = ["フシギバナ/S/1000/O"]  # リーグが S のみ
+        results = check_iv_list(rows, existing, _EVO_MAP)
+        assert results[0].status == "new"
+
+    def test_multiple_rows_mixed_new_and_skipped(self) -> None:
+        """複数行で new と skipped が混在する"""
+        rows = [
+            SearchRow("フシギバナ", ["S"], 200, ["O"]),  # 既存と重複 → skipped
+            SearchRow("ガルーラ", ["S"], 1000, ["O"]),   # 既存なし → new
+        ]
+        existing = ["フシギバナ/S/1000/O"]
+        results = check_iv_list(rows, existing, _EVO_MAP)
+        assert results[0].status == "skipped"
+        assert results[1].status == "new"
+
+    def test_empty_search_rows_returns_empty(self) -> None:
+        """検索行が空 → 空リスト"""
+        assert check_iv_list([], ["フシギバナ/S/1000/O"], _EVO_MAP) == []
+
+    def test_iv_line_is_formatted_correctly(self) -> None:
+        """iv_line は format_iv_list_lines と同じ書式"""
+        rows = [SearchRow("フシギダネ", ["S", "H"], 500, ["L", "M"])]
+        results = check_iv_list(rows, [], _EVO_MAP)
+        assert results[0].iv_line == "フシギダネ/S,H/500/L,M"
+
+    def test_conflicting_lines_not_duplicated(self) -> None:
+        """複数の (pokemon, league) ペアが同じ既存行に当たっても重複しない"""
+        # フシギダネ/S/200/M,L は展開でフシギソウ+フシギバナ両方を含む
+        # 既存行 フシギバナ/S/1000/O はフシギバナの S → conflicting に1回だけ入る
+        rows = [SearchRow("フシギダネ", ["S"], 200, ["M", "L"])]
+        existing = ["フシギバナ/S/1000/O"]
+        results = check_iv_list(rows, existing, _EVO_MAP)
+        assert results[0].status == "skipped"
+        assert results[0].conflicting_lines.count("フシギバナ/S/1000/O") == 1

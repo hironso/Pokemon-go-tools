@@ -284,3 +284,220 @@ def collect_all_iv_lines(search_rows: list[SearchRow]) -> list[str]:
         format_iv_list_lines(row.target_name, row.leagues, row.topn, row.targets)
         for row in search_rows
     ]
+
+
+# ============================================================
+# 既存データとの照合（Rev1.5）
+# ============================================================
+
+
+@dataclass
+class PokedexMemberCheckResult:
+    """pokedex_numbers.txt の照合結果1件分（仕様書7.1）。
+
+    status:
+        "new"  → 既存に無い。追加する。
+        "same" → 既存にあり、内容（図鑑番号・HP・攻撃・防御）が一致。追加しない。
+        "diff" → 既存にあり、内容が不一致。追加も書き換えもしない。差分を表示する。
+    existing は "diff" 時に既存データ {dex, hp, atk, defense} を格納する。
+    """
+
+    member: MemberInput
+    status: str  # "new" | "same" | "diff"
+    existing: dict[str, int] | None = None
+
+
+@dataclass
+class EvoMapCheckResult:
+    """evolution_map.txt の照合結果（仕様書7.2）。
+
+    status:
+        "new"  → 入力系統のメンバーが既存に1人もいない。追加する。
+        "same" → 既存に同一系統があり、段構造が完全一致。追加しない。
+        "diff" → 既存に名前が一致する系統があるが段構造が不一致（部分一致を含む）。
+                 追加も書き換えもしない。差分を表示する。
+    existing_stages は "diff" 時に既存の段構造を格納する。
+    """
+
+    status: str  # "new" | "same" | "diff"
+    existing_stages: list[list[str]] | None = None
+
+
+@dataclass
+class IvListRowCheckResult:
+    """iv_list_input.txt の照合結果1行分（仕様書7.3）。
+
+    status:
+        "new"     → 展開後の対象×リーグが既存に無い。追加する。
+        "skipped" → 展開後の対象×リーグが既存と重複。自動スキップ（追加しない）。
+    conflicting_lines は "skipped" 時に重複した既存行のリストを格納する。
+    """
+
+    row: SearchRow
+    iv_line: str  # 整形済み行文字列（確認画面の表示用）
+    status: str  # "new" | "skipped"
+    conflicting_lines: list[str]  # skipped 時: 重複した既存行のリスト
+
+
+def _parse_iv_list_line(line: str) -> tuple[str, list[str], list[str]] | None:
+    """既存 iv_list_input の1行をパースし、(name, leagues, targets) を返す。
+
+    新書式「カンマ区切り」と旧書式（連結文字列 "ML" 等）の両方に対応する。
+    形式不正の場合は None を返す（呼び出し元がスキップして安全に処理できるよう）。
+    """
+    parts = [p.strip() for p in line.split("/")]
+    if len(parts) < 4:
+        return None
+    name = parts[0]
+    if not name:
+        return None
+    leagues = [lg.strip() for lg in parts[1].split(",") if lg.strip()]
+    if not leagues:
+        return None
+    targets_str = parts[3].strip()
+    if "," in targets_str:
+        # 新書式: "M,L" など
+        targets = [t.strip() for t in targets_str.split(",") if t.strip()]
+    else:
+        # 旧書式: "ML" など（1文字ずつ展開）
+        targets = list(targets_str)
+    if not targets:
+        return None
+    return name, leagues, targets
+
+
+def check_pokedex_members(
+    members: list[MemberInput],
+    pokedex_full: dict[str, dict[str, int]],
+) -> list[PokedexMemberCheckResult]:
+    """各メンバーを既存 pokedex_full と照合し、照合結果リストを返す（仕様書7.1）。
+
+    照合はメンバーごとに独立して行う。全体を止めない。
+    pokedex_full の形式: {ポケモン名: {dex, hp_base, atk_base, def_base}}。
+    """
+    results: list[PokedexMemberCheckResult] = []
+    for member in members:
+        existing_entry = pokedex_full.get(member.name)
+        if existing_entry is None:
+            # 既存に無い → 追加対象
+            results.append(PokedexMemberCheckResult(member=member, status="new"))
+        elif (
+            existing_entry["dex"] == member.dex
+            and existing_entry["hp_base"] == member.hp
+            and existing_entry["atk_base"] == member.atk
+            and existing_entry["def_base"] == member.defense
+        ):
+            # 既存にあり・内容一致 → 追加しない
+            results.append(PokedexMemberCheckResult(member=member, status="same"))
+        else:
+            # 既存にあり・内容不一致 → 追加も書き換えもしない。差分を格納
+            results.append(
+                PokedexMemberCheckResult(
+                    member=member,
+                    status="diff",
+                    existing={
+                        "dex": existing_entry["dex"],
+                        "hp": existing_entry["hp_base"],
+                        "atk": existing_entry["atk_base"],
+                        "defense": existing_entry["def_base"],
+                    },
+                )
+            )
+    return results
+
+
+def check_evolution_map(
+    stages: list[list[str]],
+    evo_map_staged: list[list[list[str]]],
+) -> EvoMapCheckResult:
+    """入力段構造を既存 evo_map_staged と照合し、照合結果を返す（仕様書7.2）。
+
+    入力系統のいずれかのメンバー名を含む既存ファミリーを探し、段構造全体を比較する。
+    完全一致なら "same"、部分一致・段数違い・分岐違い等はすべて "diff"（書き換えない）。
+    既存に1人も見つからなければ "new"。
+    """
+    # 入力系統の全メンバー名
+    input_names: set[str] = {name for stage in stages for name in stage}
+
+    for family in evo_map_staged:
+        family_names: set[str] = {name for stage in family for name in stage}
+        if not (input_names & family_names):
+            # この既存ファミリーとは名前が重ならない → 次へ
+            continue
+        # 1名以上重なる既存ファミリーを発見 → 段構造全体を比較
+        if family == stages:
+            return EvoMapCheckResult(status="same")
+        else:
+            # 段構造不一致（部分一致・段数違い・分岐違い等）→ diff
+            return EvoMapCheckResult(status="diff", existing_stages=family)
+
+    return EvoMapCheckResult(status="new")
+
+
+def check_iv_list(
+    search_rows: list[SearchRow],
+    existing_lines: list[str],
+    combined_evo_map: list[list[list[str]]],
+) -> list[IvListRowCheckResult]:
+    """各検索行を既存 iv_list_input と照合し、照合結果リストを返す（仕様書7.3）。
+
+    expand_targets で展開した「対象ポケモン × リーグ」集合で照合する。
+    表面的な文字列比較ではなく展開後の集合比較のため、書式や起点名の違いを透過する。
+
+    Args:
+        search_rows: 追加しようとしている検索設定の行リスト。
+        existing_lines: esal の load_iv_list_input_raw が返す既存行リスト。
+        combined_evo_map: 既存 evo_map と新系統を合成した進化マップ。
+    """
+    # ---- 既存行を展開して (ポケモン名, リーグ) → 既存行リスト のマッピングを構築 ----
+    # 同じ (pokemon, league) ペアを含む既存行を特定するために使う
+    pair_to_lines: dict[tuple[str, str], list[str]] = {}
+    for raw in existing_lines:
+        parsed = _parse_iv_list_line(raw)
+        if parsed is None:
+            continue  # 形式不正行はスキップ
+        ex_name, ex_leagues, ex_targets = parsed
+        expanded = expand_targets(ex_name, ex_targets, combined_evo_map)
+        for pokemon in expanded:
+            for lg in ex_leagues:
+                key = (pokemon, lg)
+                if key not in pair_to_lines:
+                    pair_to_lines[key] = []
+                # 同じ既存行が複数のペアに対応しても重複して格納しない
+                if raw not in pair_to_lines[key]:
+                    pair_to_lines[key].append(raw)
+
+    # ---- 各新規行を展開して照合 ----
+    results: list[IvListRowCheckResult] = []
+    for row in search_rows:
+        iv_line = format_iv_list_lines(row.target_name, row.leagues, row.topn, row.targets)
+        expanded = expand_targets(row.target_name, row.targets, combined_evo_map)
+
+        # 展開結果の各 (pokemon, league) ペアで重複する既存行を収集する
+        conflicting: list[str] = []
+        for pokemon in expanded:
+            for lg in row.leagues:
+                for existing_raw in pair_to_lines.get((pokemon, lg), []):
+                    if existing_raw not in conflicting:
+                        conflicting.append(existing_raw)
+
+        if conflicting:
+            results.append(
+                IvListRowCheckResult(
+                    row=row,
+                    iv_line=iv_line,
+                    status="skipped",
+                    conflicting_lines=conflicting,
+                )
+            )
+        else:
+            results.append(
+                IvListRowCheckResult(
+                    row=row,
+                    iv_line=iv_line,
+                    status="new",
+                    conflicting_lines=[],
+                )
+            )
+
+    return results
